@@ -21,6 +21,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/web-seven/provider-strapi/internal/controller/config"
+	"github.com/web-seven/provider-strapi/internal/controller/rolepermissions"
 )
 
 // SetupGated creates all Strapi controllers with safe-start support and adds them to
@@ -28,6 +29,7 @@ import (
 func SetupGated(mgr ctrl.Manager, o controller.Options) error {
 	for _, setup := range []func(ctrl.Manager, controller.Options) error{
 		config.Setup,
+		rolepermissions.SetupGated,
 	} {
 		if err := setup(mgr, o); err != nil {
 			return err

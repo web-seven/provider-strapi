@@ -20,6 +20,7 @@ package apis
 import (
 	"k8s.io/apimachinery/pkg/runtime"
 
+	permissionsv1alpha1 "github.com/web-seven/provider-strapi/apis/permissions/v1alpha1"
 	strapiv1alpha1 "github.com/web-seven/provider-strapi/apis/v1alpha1"
 )
 
@@ -27,6 +28,7 @@ func init() {
 	// Register the types with the Scheme so the components can map objects to GroupVersionKinds and back
 	AddToSchemes = append(AddToSchemes,
 		strapiv1alpha1.SchemeBuilder.AddToScheme,
+		permissionsv1alpha1.SchemeBuilder.AddToScheme,
 	)
 }
 
