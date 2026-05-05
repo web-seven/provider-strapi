@@ -1,4 +1,4 @@
-module github.com/crossplane/provider-template
+module github.com/web-seven/provider-strapi
 
 go 1.24.0
 

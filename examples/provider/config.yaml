@@ -12,7 +12,7 @@ type: Opaque
 data:
   credentials: QkFTRTY0RU5DT0RFRF9QUk9WSURFUl9DUkVEUwo=
 ---
-apiVersion: template.crossplane.io/v1alpha1
+apiVersion: strapi.crossplane.io/v1alpha1
 kind: ProviderConfig
 metadata:
   name: example
@@ -25,7 +25,7 @@ spec:
       name: example-provider-secret
       key: credentials
 ---
-apiVersion: template.crossplane.io/v1alpha1
+apiVersion: strapi.crossplane.io/v1alpha1
 kind: ClusterProviderConfig
 metadata:
   name: example

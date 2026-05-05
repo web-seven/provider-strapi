@@ -1,4 +1,4 @@
-apiVersion: sample.template.crossplane.io/v1alpha1
+apiVersion: sample.strapi.crossplane.io/v1alpha1
 kind: MyType
 metadata:
   name: example
@@ -10,7 +10,7 @@ spec:
     name: example
     kind: ProviderConfig
 ---
-apiVersion: sample.template.crossplane.io/v1alpha1
+apiVersion: sample.strapi.crossplane.io/v1alpha1
 kind: MyType
 metadata:
   name: cluster-example

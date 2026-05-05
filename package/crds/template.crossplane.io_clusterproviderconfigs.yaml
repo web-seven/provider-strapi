@@ -4,14 +4,14 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: clusterproviderconfigs.template.crossplane.io
+  name: clusterproviderconfigs.strapi.crossplane.io
 spec:
-  group: template.crossplane.io
+  group: strapi.crossplane.io
   names:
     categories:
     - crossplane
     - provider
-    - template
+    - strapi
     kind: ClusterProviderConfig
     listKind: ClusterProviderConfigList
     plural: clusterproviderconfigs
@@ -29,7 +29,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: A ClusterProviderConfig configures a Template provider.
+        description: A ClusterProviderConfig configures a Strapi provider.
         properties:
           apiVersion:
             description: |-
