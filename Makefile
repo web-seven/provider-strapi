@@ -104,7 +104,21 @@ dev-clean: $(KIND) $(KUBECTL)
 	@$(INFO) Deleting kind cluster
 	@$(KIND) delete cluster --name=$(PROJECT_NAME)-dev
 
-.PHONY: submodules fallthrough test-integration run dev dev-clean
+# Serve the provider against an Overlock-managed Crossplane environment.
+# Creates the env (`overlock env create $(PROJECT_NAME)`) and watches the
+# package source, rebuilding and reloading the provider on changes
+# (`overlock provider serve`).
+serve:
+	@echo "Creating Overlock environment $(PROJECT_NAME)"
+	@overlock env create $(PROJECT_NAME)
+	@echo "Serving provider via Overlock"
+	@overlock provider serve
+
+serve-clean:
+	@echo "Deleting Overlock environment $(PROJECT_NAME)"
+	@overlock env delete $(PROJECT_NAME)
+
+.PHONY: submodules fallthrough test-integration run dev dev-clean serve serve-clean
 
 # ====================================================================================
 # Special Targets
@@ -121,16 +135,6 @@ $(GOMPLATE):
 	@$(OK) installing gomplate $(SAFEHOSTPLATFORM)
 
 export GOMPLATE
-
-# This target prepares repo for your provider by replacing all "strapi"
-# occurrences with your provider name.
-# This target can only be run once, if you want to rerun for some reason,
-# consider stashing/resetting your git state.
-# Arguments:
-#   provider: Camel case name of your provider, e.g. GitHub, PlanetScale
-provider.prepare:
-	@[ "${provider}" ] || ( echo "argument \"provider\" is not set"; exit 1 )
-	@PROVIDER=$(provider) ./hack/helpers/prepare.sh
 
 # This target adds a new api type and its controller.
 # You would still need to register new api in "apis/<provider>.go" and
