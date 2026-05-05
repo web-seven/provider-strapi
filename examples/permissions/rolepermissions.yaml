@@ -1,0 +1,42 @@
+# RolePermissions manages the permission set of an existing
+# users-permissions role in Strapi v4. The role itself is not created or
+# deleted by this resource — only its permission tree is managed.
+#
+# Built-in roles are matched by `role.type`:
+#   public        → Strapi's "Public" role (anonymous /api/* access)
+#   authenticated → Strapi's "Authenticated" role (logged-in /api/* access)
+# Other values are matched against role.name (case-insensitive).
+#
+# The Permissions list is authoritative — Strapi's PUT replaces the entire
+# tree, so anything not listed is revoked on the next reconcile.
+
+apiVersion: permissions.strapi.crossplane.io/v1alpha1
+kind: RolePermissions
+metadata:
+  name: public
+  namespace: default
+spec:
+  providerConfigRef:
+    name: example
+  forProvider:
+    role: public
+    permissions:
+      - api::article.article.find
+      - api::article.article.findOne
+      - plugin::users-permissions.auth.callback
+      - plugin::users-permissions.auth.register
+---
+apiVersion: permissions.strapi.crossplane.io/v1alpha1
+kind: RolePermissions
+metadata:
+  name: authenticated
+  namespace: default
+spec:
+  providerConfigRef:
+    name: example
+  forProvider:
+    role: authenticated
+    permissions:
+      - api::article.article.find
+      - api::article.article.findOne
+      - plugin::users-permissions.user.me
