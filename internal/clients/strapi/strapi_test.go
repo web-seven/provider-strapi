@@ -190,7 +190,9 @@ func TestClient_LoginFailureSurfaced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := c.Do(context.Background(), http.MethodGet, "/admin/users/me", nil); err == nil {
+	resp, err := c.Do(context.Background(), http.MethodGet, "/admin/users/me", nil)
+	if err == nil {
+		resp.Body.Close()
 		t.Fatal("expected error from bad credentials")
 	}
 }
