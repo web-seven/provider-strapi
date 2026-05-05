@@ -30,11 +30,11 @@ func TestParseCredentials(t *testing.T) {
 		in      string
 		wantErr bool
 	}{
-		"valid":           {`{"email":"a@b","password":"x"}`, false},
-		"missing email":   {`{"password":"x"}`, true},
-		"missing pwd":     {`{"email":"a@b"}`, true},
-		"empty email":     {`{"email":"","password":"x"}`, true},
-		"not json":        {`hello`, true},
+		"valid":         {`{"email":"a@b","password":"x"}`, false},
+		"missing email": {`{"password":"x"}`, true},
+		"missing pwd":   {`{"email":"a@b"}`, true},
+		"empty email":   {`{"email":"","password":"x"}`, true},
+		"not json":      {`hello`, true},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
