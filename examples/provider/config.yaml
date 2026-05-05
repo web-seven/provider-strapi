@@ -3,6 +3,12 @@ kind: Namespace
 metadata:
   name: default
 ---
+# The credentials secret must contain a JSON object with the admin
+# user's email and password. The provider exchanges these for an admin
+# JWT via POST /admin/login on first use.
+#
+# The base64-encoded value below decodes to:
+#   {"email":"admin@example.com","password":"change-me"}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -10,7 +16,7 @@ metadata:
   name: example-provider-secret
 type: Opaque
 data:
-  credentials: QkFTRTY0RU5DT0RFRF9QUk9WSURFUl9DUkVEUwo=
+  credentials: eyJlbWFpbCI6ImFkbWluQGV4YW1wbGUuY29tIiwicGFzc3dvcmQiOiJjaGFuZ2UtbWUifQ==
 ---
 apiVersion: strapi.crossplane.io/v1alpha1
 kind: ProviderConfig
@@ -18,6 +24,7 @@ metadata:
   name: example
   namespace: default
 spec:
+  endpoint: https://strapi.example.com
   credentials:
     source: Secret
     secretRef:
@@ -30,6 +37,7 @@ kind: ClusterProviderConfig
 metadata:
   name: example
 spec:
+  endpoint: https://strapi.example.com
   credentials:
     source: Secret
     secretRef:

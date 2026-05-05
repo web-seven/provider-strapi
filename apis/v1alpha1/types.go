@@ -11,7 +11,13 @@ type ProviderConfigStatus struct {
 	xpv1.ProviderConfigStatus `json:",inline"`
 }
 
-// ProviderCredentials required to authenticate.
+// ProviderCredentials required to authenticate to Strapi.
+// The referenced source must contain a JSON object with the
+// admin user's email and password, e.g.:
+//
+//	{"email": "admin@example.com", "password": "..."}
+//
+// The provider exchanges these for an admin JWT via POST /admin/login.
 type ProviderCredentials struct {
 	// Source of the provider credentials.
 	// +kubebuilder:validation:Enum=None;Secret;InjectedIdentity;Environment;Filesystem
@@ -21,8 +27,19 @@ type ProviderCredentials struct {
 }
 
 type ProviderConfigSpec struct {
-	// Credentials required to authenticate to this provider.
+	// Endpoint is the base URL of the Strapi instance,
+	// e.g. https://strapi.example.com. Trailing slashes are stripped.
+	// +kubebuilder:validation:Pattern=`^https?://`
+	Endpoint string `json:"endpoint"`
+
+	// Credentials of an admin user used to authenticate to Strapi.
 	Credentials ProviderCredentials `json:"credentials"`
+
+	// InsecureSkipTLSVerify disables TLS certificate verification when
+	// talking to Strapi. Intended for development against self-signed
+	// certificates; do not enable in production.
+	// +optional
+	InsecureSkipTLSVerify bool `json:"insecureSkipTLSVerify,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -31,8 +48,10 @@ type ProviderConfigSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:printcolumn:name="SECRET-NAME",type="string",JSONPath=".spec.credentials.secretRef.name",priority=1
+// +kubebuilder:printcolumn:name="ENDPOINT",type="string",JSONPath=".spec.endpoint"
 // +kubebuilder:resource:scope=Namespaced,categories={crossplane,provider,strapi}
-// A ProviderConfig configures a Helm 'provider', i.e. a connection to a particular
+// A ProviderConfig configures a Strapi provider — endpoint and admin credentials
+// used to authenticate against a single Strapi instance.
 type ProviderConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -80,8 +99,10 @@ type ProviderConfigUsageList struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:printcolumn:name="SECRET-NAME",type="string",JSONPath=".spec.credentials.secretRef.name",priority=1
+// +kubebuilder:printcolumn:name="ENDPOINT",type="string",JSONPath=".spec.endpoint"
 // +kubebuilder:resource:scope=Cluster,categories={crossplane,provider,strapi}
-// A ClusterProviderConfig configures a Strapi provider.
+// A ClusterProviderConfig configures a Strapi provider — endpoint and admin
+// credentials used to authenticate against a single Strapi instance.
 type ClusterProviderConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
