@@ -208,34 +208,44 @@ func splitFlat(p string) (resource, controller, action string, ok bool) {
 
 	switch {
 	case strings.HasPrefix(before, "api::"):
-		afterPrefix := before[len("api::"):]
-		firstDot := strings.Index(afterPrefix, ".")
-		if firstDot <= 0 {
-			return "", "", "", false
-		}
-		tail := afterPrefix[firstDot+1:]
-		if dot := strings.Index(tail, "."); dot >= 0 {
-			// Explicit controller form: api::<api>.<contentType>.<controller>
-			resource = "api::" + afterPrefix[:firstDot+1+dot]
-			controller = tail[dot+1:]
-		} else {
-			// Implicit controller (= content type): api::<api>.<contentType>
-			resource = before
-			controller = tail
-		}
+		resource, controller, ok = splitAPI(before)
 	case strings.HasPrefix(before, "plugin::"):
-		afterPrefix := before[len("plugin::"):]
-		firstDot := strings.Index(afterPrefix, ".")
-		if firstDot <= 0 || firstDot == len(afterPrefix)-1 {
-			return "", "", "", false
-		}
-		resource = "plugin::" + afterPrefix[:firstDot]
-		controller = afterPrefix[firstDot+1:]
+		resource, controller, ok = splitPlugin(before)
 	default:
 		return "", "", "", false
 	}
-	if resource == "" || controller == "" || action == "" {
+	if !ok || resource == "" || controller == "" {
 		return "", "", "", false
 	}
 	return resource, controller, action, true
+}
+
+// splitAPI parses the "<resource>" prefix of an api flat string. Accepts
+// both the canonical "api::<api>.<contentType>" (controller implicit, equals
+// contentType) and the explicit "api::<api>.<contentType>.<controller>".
+func splitAPI(before string) (resource, controller string, ok bool) {
+	afterPrefix := before[len("api::"):]
+	firstDot := strings.Index(afterPrefix, ".")
+	if firstDot <= 0 {
+		return "", "", false
+	}
+	tail := afterPrefix[firstDot+1:]
+	if dot := strings.Index(tail, "."); dot >= 0 {
+		return "api::" + afterPrefix[:firstDot+1+dot], tail[dot+1:], true
+	}
+	if tail == "" {
+		return "", "", false
+	}
+	return before, tail, true
+}
+
+// splitPlugin parses the "<resource>.<controller>" prefix of a plugin flat
+// string ("plugin::<plugin>.<controller>").
+func splitPlugin(before string) (resource, controller string, ok bool) {
+	afterPrefix := before[len("plugin::"):]
+	firstDot := strings.Index(afterPrefix, ".")
+	if firstDot <= 0 || firstDot == len(afterPrefix)-1 {
+		return "", "", false
+	}
+	return "plugin::" + afterPrefix[:firstDot], afterPrefix[firstDot+1:], true
 }
