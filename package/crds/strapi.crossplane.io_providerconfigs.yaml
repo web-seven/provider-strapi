@@ -26,11 +26,15 @@ spec:
       name: SECRET-NAME
       priority: 1
       type: string
+    - jsonPath: .spec.endpoint
+      name: ENDPOINT
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: A ProviderConfig configures a Helm 'provider', i.e. a connection
-          to a particular
+        description: |-
+          A ProviderConfig configures a Strapi provider — endpoint and admin credentials
+          used to authenticate against a single Strapi instance.
         properties:
           apiVersion:
             description: |-
@@ -52,7 +56,8 @@ spec:
           spec:
             properties:
               credentials:
-                description: Credentials required to authenticate to this provider.
+                description: Credentials of an admin user used to authenticate to
+                  Strapi.
                 properties:
                   env:
                     description: |-
@@ -107,8 +112,21 @@ spec:
                 required:
                 - source
                 type: object
+              endpoint:
+                description: |-
+                  Endpoint is the base URL of the Strapi instance,
+                  e.g. https://strapi.example.com. Trailing slashes are stripped.
+                pattern: ^https?://
+                type: string
+              insecureSkipTLSVerify:
+                description: |-
+                  InsecureSkipTLSVerify disables TLS certificate verification when
+                  talking to Strapi. Intended for development against self-signed
+                  certificates; do not enable in production.
+                type: boolean
             required:
             - credentials
+            - endpoint
             type: object
           status:
             description: A ProviderConfigStatus defines the status of a Provider.
