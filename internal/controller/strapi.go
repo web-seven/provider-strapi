@@ -20,16 +20,14 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/crossplane/provider-template/internal/controller/config"
-	"github.com/crossplane/provider-template/internal/controller/mytype"
+	"github.com/web-seven/provider-strapi/internal/controller/config"
 )
 
-// SetupGated creates all Template controllers with safe-start support and adds them to
+// SetupGated creates all Strapi controllers with safe-start support and adds them to
 // the supplied manager.
 func SetupGated(mgr ctrl.Manager, o controller.Options) error {
 	for _, setup := range []func(ctrl.Manager, controller.Options) error{
 		config.Setup,
-		mytype.SetupGated,
 	} {
 		if err := setup(mgr, o); err != nil {
 			return err
