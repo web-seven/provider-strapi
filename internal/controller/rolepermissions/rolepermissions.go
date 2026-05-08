@@ -68,12 +68,18 @@ func SetupGated(mgr ctrl.Manager, o controller.Options) error {
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	name := managed.ControllerName(permv1alpha1.RolePermissionsGroupKind)
 
+	// One cache per provider lifetime, keyed by (endpoint, credentials, TLS).
+	// Without this, every reconcile would build a fresh Client and trigger a
+	// fresh /admin/login — quickly tripping Strapi's login rate limiter
+	// (HTTP 429) once a few RolePermissions resources are reconciling.
+	clientCache := strapiclient.NewCache()
+
 	opts := []managed.ReconcilerOption{
 		managed.WithTypedExternalConnector[*permv1alpha1.RolePermissions](&connector{
 			kube:  mgr.GetClient(),
 			usage: resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv1alpha1.ProviderConfigUsage{}),
 			newClientFn: func(cfg strapiclient.Config) (strapiClient, error) {
-				return strapiclient.New(cfg)
+				return clientCache.Get(cfg)
 			},
 		}),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
@@ -178,13 +184,6 @@ type external struct {
 }
 
 func (e *external) Observe(ctx context.Context, cr *permv1alpha1.RolePermissions) (managed.ExternalObservation, error) {
-	if meta.WasDeleted(cr) {
-		// Built-in roles can't be deleted; we treat Delete as a no-op below.
-		// Returning ResourceExists=false short-circuits the reconcile loop
-		// and lets the finalizer be removed.
-		return managed.ExternalObservation{ResourceExists: false}, nil
-	}
-
 	role, err := e.resolveRole(ctx, cr)
 	if err != nil {
 		return managed.ExternalObservation{}, err
@@ -227,11 +226,25 @@ func (e *external) Update(ctx context.Context, cr *permv1alpha1.RolePermissions)
 	return managed.ExternalUpdate{}, nil
 }
 
-func (e *external) Delete(_ context.Context, cr *permv1alpha1.RolePermissions) (managed.ExternalDelete, error) {
+func (e *external) Delete(ctx context.Context, cr *permv1alpha1.RolePermissions) (managed.ExternalDelete, error) {
+	// We do NOT delete the role itself — this MR manages permissions only,
+	// not role lifecycle, and built-in roles can't be deleted anyway.
+	// "Delete" means: clear the managed permissions on the role.
+	//
+	// The Crossplane reconciler only invokes this when the user's
+	// managementPolicies include the Delete action. If they want to keep
+	// the permissions in Strapi after deleting the MR, they set policies
+	// to e.g. ["Observe","Create","Update"] and this function is never called.
 	cr.Status.SetConditions(xpv1.Deleting())
-	// Built-in roles (Public, Authenticated) can't be removed from Strapi,
-	// and we don't manage role lifecycle in this MR. Leave the role's
-	// permissions as they are and let the finalizer be removed.
+
+	role, err := e.resolveRole(ctx, cr)
+	if err != nil {
+		return managed.ExternalDelete{}, err
+	}
+	role.Permissions = strapiclient.PermissionsByResource{}
+	if err := e.client.UpdateRole(ctx, role.ID, role); err != nil {
+		return managed.ExternalDelete{}, errors.Wrap(err, errUpdateRole)
+	}
 	return managed.ExternalDelete{}, nil
 }
 

@@ -162,24 +162,46 @@ func TestObserve_RoleNotFound(t *testing.T) {
 	}
 }
 
-func TestObserve_DeletedShortCircuits(t *testing.T) {
-	fc := &fakeClient{}
-	e := &external{client: fc}
-
+func TestObserve_DeletionLifecycle(t *testing.T) {
+	// During deletion, ResourceExists tracks "do we still have permissions
+	// to clear" rather than "does the role exist" — otherwise we'd loop on
+	// Delete forever (we never delete the role itself).
 	now := metav1.Now()
-	cr := newCR("public", nil)
-	cr.SetDeletionTimestamp(&now)
 
-	obs, err := e.Observe(context.Background(), cr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if obs.ResourceExists {
-		t.Fatal("expected ResourceExists=false on deleted CR")
-	}
-	if fc.listCalls != 0 {
-		t.Fatal("expected no list call when deleted")
-	}
+	t.Run("role still has permissions → exists=true", func(t *testing.T) {
+		fc := &fakeClient{roles: builtInRoles()} // public has 1 permission
+		e := &external{client: fc}
+
+		cr := newCR("public", nil)
+		cr.SetDeletionTimestamp(&now)
+
+		obs, err := e.Observe(context.Background(), cr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !obs.ResourceExists {
+			t.Fatal("expected ResourceExists=true while role still has permissions")
+		}
+	})
+
+	t.Run("role permissions cleared → exists=false", func(t *testing.T) {
+		// Simulate a previous Delete having cleared the role.
+		roles := builtInRoles()
+		roles[1].Permissions = nil // public role
+		fc := &fakeClient{roles: roles}
+		e := &external{client: fc}
+
+		cr := newCR("public", nil)
+		cr.SetDeletionTimestamp(&now)
+
+		obs, err := e.Observe(context.Background(), cr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if obs.ResourceExists {
+			t.Fatal("expected ResourceExists=false after Delete cleared permissions")
+		}
+	})
 }
 
 func TestUpdate_PutsPermissions(t *testing.T) {
@@ -220,15 +242,26 @@ func TestCreate_BehavesAsUpdate(t *testing.T) {
 	}
 }
 
-func TestDelete_NoOp(t *testing.T) {
+func TestDelete_ClearsPermissions(t *testing.T) {
+	// Delete clears the role's managed permissions in Strapi (PUT empty
+	// tree). It does NOT delete the role itself — this MR doesn't manage
+	// role lifecycle, and built-in roles can't be deleted anyway.
+	//
+	// The Crossplane reconciler only invokes Delete when the user's
+	// managementPolicies include the Delete action. Skipping Delete on
+	// MR removal is achieved at that level (e.g. by setting policies to
+	// ["Observe","Create","Update"]), not in this code path.
 	fc := &fakeClient{roles: builtInRoles()}
 	e := &external{client: fc}
 
-	cr := newCR("public", nil)
+	cr := newCR("public", []string{"api::article.article.find"})
 	if _, err := e.Delete(context.Background(), cr); err != nil {
 		t.Fatal(err)
 	}
-	if fc.updateCals != 0 {
-		t.Fatal("Delete should not call UpdateRole")
+	if fc.updated == nil {
+		t.Fatal("Delete should call UpdateRole to clear permissions")
+	}
+	if got := strapiclient.FlattenPermissions(fc.updated.Permissions); len(got) != 0 {
+		t.Fatalf("expected empty permissions, got %v", got)
 	}
 }
