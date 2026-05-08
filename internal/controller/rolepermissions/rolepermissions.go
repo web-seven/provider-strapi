@@ -50,30 +50,36 @@ const (
 	errNewClient    = "cannot create Strapi client"
 	errListRoles    = "cannot list users-permissions roles"
 	errRoleNotFound = "role not found in Strapi"
-	errBadExtName   = "external-name annotation is not a numeric role ID"
 	errUpdateRole   = "cannot update role permissions"
 )
 
-// SetupGated registers the controller with safe-start support.
+// SetupGated registers the controller. The "Gated" name is preserved for
+// continuity with the upstream provider-template's call sites; the safe-start
+// CRD gate has been removed because the provider's auto-generated ClusterRole
+// did not include `apiextensions.k8s.io/customresourcedefinitions` watch
+// permissions, causing the gate's CRD informer to time out and the manager
+// to refuse to start. CRDs in this package are installed by Crossplane
+// before the provider container starts, so gating is unnecessary.
 func SetupGated(mgr ctrl.Manager, o controller.Options) error {
-	o.Gate.Register(func() {
-		if err := Setup(mgr, o); err != nil {
-			panic(errors.Wrap(err, "cannot setup RolePermissions controller"))
-		}
-	}, permv1alpha1.RolePermissionsGroupVersionKind)
-	return nil
+	return Setup(mgr, o)
 }
 
 // Setup adds a controller that reconciles RolePermissions managed resources.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	name := managed.ControllerName(permv1alpha1.RolePermissionsGroupKind)
 
+	// One cache per provider lifetime, keyed by (endpoint, credentials, TLS).
+	// Without this, every reconcile would build a fresh Client and trigger a
+	// fresh /admin/login — quickly tripping Strapi's login rate limiter
+	// (HTTP 429) once a few RolePermissions resources are reconciling.
+	clientCache := strapiclient.NewCache()
+
 	opts := []managed.ReconcilerOption{
 		managed.WithTypedExternalConnector[*permv1alpha1.RolePermissions](&connector{
 			kube:  mgr.GetClient(),
 			usage: resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv1alpha1.ProviderConfigUsage{}),
 			newClientFn: func(cfg strapiclient.Config) (strapiClient, error) {
-				return strapiclient.New(cfg)
+				return clientCache.Get(cfg)
 			},
 		}),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
@@ -178,19 +184,22 @@ type external struct {
 }
 
 func (e *external) Observe(ctx context.Context, cr *permv1alpha1.RolePermissions) (managed.ExternalObservation, error) {
-	if meta.WasDeleted(cr) {
-		// Built-in roles can't be deleted; we treat Delete as a no-op below.
-		// Returning ResourceExists=false short-circuits the reconcile loop
-		// and lets the finalizer be removed.
-		return managed.ExternalObservation{ResourceExists: false}, nil
-	}
-
 	role, err := e.resolveRole(ctx, cr)
 	if err != nil {
 		return managed.ExternalObservation{}, err
 	}
 
 	meta.SetExternalName(cr, strconv.Itoa(role.ID))
+
+	// During deletion the "external resource" is the configured permission
+	// set, not the role itself (we never delete the role). Once Delete has
+	// recorded a successful clear, report absence so the reconciler removes
+	// the finalizer instead of looping on Delete forever. The flag is only
+	// trusted alongside WasDeleted so a stale value can't suppress a real
+	// observation outside the deletion path.
+	if meta.WasDeleted(cr) && cr.Status.AtProvider.Cleared {
+		return managed.ExternalObservation{ResourceExists: false}, nil
+	}
 
 	current := strapiclient.FlattenPermissions(role.Permissions)
 	desired := append([]string(nil), cr.Spec.ForProvider.Permissions...)
@@ -227,11 +236,28 @@ func (e *external) Update(ctx context.Context, cr *permv1alpha1.RolePermissions)
 	return managed.ExternalUpdate{}, nil
 }
 
-func (e *external) Delete(_ context.Context, cr *permv1alpha1.RolePermissions) (managed.ExternalDelete, error) {
+func (e *external) Delete(ctx context.Context, cr *permv1alpha1.RolePermissions) (managed.ExternalDelete, error) {
+	// We do NOT delete the role itself — this MR manages permissions only,
+	// not role lifecycle, and built-in roles can't be deleted anyway.
+	// "Delete" means: clear the managed permissions on the role.
+	//
+	// The Crossplane reconciler only invokes this when the user's
+	// managementPolicies include the Delete action. If they want to keep
+	// the permissions in Strapi after deleting the MR, they set policies
+	// to e.g. ["Observe","Create","Update"] and this function is never called.
 	cr.Status.SetConditions(xpv1.Deleting())
-	// Built-in roles (Public, Authenticated) can't be removed from Strapi,
-	// and we don't manage role lifecycle in this MR. Leave the role's
-	// permissions as they are and let the finalizer be removed.
+
+	role, err := e.resolveRole(ctx, cr)
+	if err != nil {
+		return managed.ExternalDelete{}, err
+	}
+	role.Permissions = strapiclient.PermissionsByResource{}
+	if err := e.client.UpdateRole(ctx, role.ID, role); err != nil {
+		return managed.ExternalDelete{}, errors.Wrap(err, errUpdateRole)
+	}
+	// The reconciler runs Status().Update() after Delete, so this flag is
+	// persisted; the next Observe sees it and reports absence.
+	cr.Status.AtProvider.Cleared = true
 	return managed.ExternalDelete{}, nil
 }
 
@@ -239,7 +265,10 @@ func (e *external) Disconnect(_ context.Context) error { return nil }
 
 // resolveRole locates the target role: it prefers the cached external-name
 // annotation (numeric role ID) for stability, falling back to selector
-// resolution by type or name.
+// resolution by type or name. A non-numeric external-name (which is what
+// crossplane-runtime's default NameAsExternalName initializer writes — the
+// CR's metadata.name — on first reconcile, before our Observe overwrites
+// it) is treated as "not set" rather than an error.
 func (e *external) resolveRole(ctx context.Context, cr *permv1alpha1.RolePermissions) (strapiclient.Role, error) {
 	roles, err := e.client.ListRoles(ctx)
 	if err != nil {
@@ -247,17 +276,19 @@ func (e *external) resolveRole(ctx context.Context, cr *permv1alpha1.RolePermiss
 	}
 
 	if extName := meta.GetExternalName(cr); extName != "" {
-		id, err := strconv.Atoi(extName)
-		if err != nil {
-			return strapiclient.Role{}, errors.Wrap(err, errBadExtName)
-		}
-		for _, r := range roles {
-			if r.ID == id {
-				return r, nil
+		if id, err := strconv.Atoi(extName); err == nil {
+			for _, r := range roles {
+				if r.ID == id {
+					return r, nil
+				}
 			}
+			// Numeric external-name set but role not found — fall through to
+			// selector resolution so a renumbered or recreated role can be
+			// picked up.
 		}
-		// External name set but role not found — fall through to selector
-		// resolution so a renumbered or recreated role can be picked up.
+		// Non-numeric external-name: ignore and fall through to selector
+		// resolution. Observe will overwrite the annotation with the resolved
+		// role's ID.
 	}
 
 	role, ok := strapiclient.FindRole(roles, cr.Spec.ForProvider.Role)

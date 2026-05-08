@@ -52,6 +52,12 @@ type RolePermissionsObservation struct {
 
 	// Permissions is the current permission action set as observed on the role.
 	Permissions []string `json:"permissions,omitempty"`
+
+	// Cleared is set by Delete after wiping the role's permissions in Strapi.
+	// On the next deletion reconcile Observe uses it to report the external
+	// resource as gone, so the finalizer drains instead of looping on Delete
+	// (the role itself is never removed by this MR).
+	Cleared bool `json:"cleared,omitempty"`
 }
 
 // A RolePermissionsSpec defines the desired state of a RolePermissions.

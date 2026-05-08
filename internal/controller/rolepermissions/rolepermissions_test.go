@@ -114,6 +114,30 @@ func TestObserve_DriftDetected(t *testing.T) {
 	}
 }
 
+func TestObserve_NonNumericExternalNameFallsThroughToSelector(t *testing.T) {
+	// crossplane-runtime's default NameAsExternalName initializer writes the
+	// CR's metadata.name as external-name on first reconcile. For
+	// RolePermissions that means "public" / "authenticated", which Atoi
+	// cannot parse. The previous implementation errored out; we now ignore
+	// non-numeric external-names and fall through to selector resolution.
+	fc := &fakeClient{roles: builtInRoles()}
+	e := &external{client: fc}
+
+	cr := newCR("public", []string{"api::article.article.find"})
+	meta.SetExternalName(cr, "public") // simulates the initializer
+
+	obs, err := e.Observe(context.Background(), cr)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !obs.ResourceExists {
+		t.Fatal("expected ResourceExists=true")
+	}
+	if got := meta.GetExternalName(cr); got != "2" {
+		t.Fatalf("Observe should have overwritten external-name with the role ID; got %q", got)
+	}
+}
+
 func TestObserve_InSync(t *testing.T) {
 	fc := &fakeClient{roles: builtInRoles()}
 	e := &external{client: fc}
@@ -138,23 +162,79 @@ func TestObserve_RoleNotFound(t *testing.T) {
 	}
 }
 
-func TestObserve_DeletedShortCircuits(t *testing.T) {
-	fc := &fakeClient{}
+func TestObserve_DeletionLifecycle(t *testing.T) {
+	// During deletion the "external resource" is the configured permission
+	// set, not the role itself. Observe must keep reporting ResourceExists=true
+	// until Delete has actually run (and recorded the Cleared flag in status),
+	// so the reconciler invokes Delete at least once. After Delete records
+	// success, Observe returns false so the finalizer can drain.
+	now := metav1.Now()
+
+	t.Run("Cleared flag unset → exists=true so Delete runs", func(t *testing.T) {
+		fc := &fakeClient{roles: builtInRoles()}
+		e := &external{client: fc}
+
+		cr := newCR("public", nil)
+		cr.SetDeletionTimestamp(&now)
+
+		obs, err := e.Observe(context.Background(), cr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !obs.ResourceExists {
+			t.Fatal("expected ResourceExists=true on first deletion reconcile (Delete must still run)")
+		}
+	})
+
+	t.Run("Cleared flag unset and role already empty → still exists=true", func(t *testing.T) {
+		// Important: an empty live permission set must NOT short-circuit
+		// the deletion path on its own — Delete is what writes the flag,
+		// and the user wants Delete to be invoked unconditionally.
+		roles := builtInRoles()
+		roles[1].Permissions = nil
+		fc := &fakeClient{roles: roles}
+		e := &external{client: fc}
+
+		cr := newCR("public", nil)
+		cr.SetDeletionTimestamp(&now)
+
+		obs, err := e.Observe(context.Background(), cr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !obs.ResourceExists {
+			t.Fatal("expected ResourceExists=true while Cleared flag is unset")
+		}
+	})
+
+	t.Run("Cleared flag set → exists=false drains finalizer", func(t *testing.T) {
+		fc := &fakeClient{roles: builtInRoles()}
+		e := &external{client: fc}
+
+		cr := newCR("public", nil)
+		cr.SetDeletionTimestamp(&now)
+		cr.Status.AtProvider.Cleared = true
+
+		obs, err := e.Observe(context.Background(), cr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if obs.ResourceExists {
+			t.Fatal("expected ResourceExists=false once Delete has recorded the Cleared flag")
+		}
+	})
+}
+
+func TestDelete_SetsClearedFlag(t *testing.T) {
+	fc := &fakeClient{roles: builtInRoles()}
 	e := &external{client: fc}
 
-	now := metav1.Now()
-	cr := newCR("public", nil)
-	cr.SetDeletionTimestamp(&now)
-
-	obs, err := e.Observe(context.Background(), cr)
-	if err != nil {
+	cr := newCR("public", []string{"api::article.article.find"})
+	if _, err := e.Delete(context.Background(), cr); err != nil {
 		t.Fatal(err)
 	}
-	if obs.ResourceExists {
-		t.Fatal("expected ResourceExists=false on deleted CR")
-	}
-	if fc.listCalls != 0 {
-		t.Fatal("expected no list call when deleted")
+	if !cr.Status.AtProvider.Cleared {
+		t.Fatal("Delete must record Cleared=true so the next Observe drains the finalizer")
 	}
 }
 
@@ -196,15 +276,26 @@ func TestCreate_BehavesAsUpdate(t *testing.T) {
 	}
 }
 
-func TestDelete_NoOp(t *testing.T) {
+func TestDelete_ClearsPermissions(t *testing.T) {
+	// Delete clears the role's managed permissions in Strapi (PUT empty
+	// tree). It does NOT delete the role itself — this MR doesn't manage
+	// role lifecycle, and built-in roles can't be deleted anyway.
+	//
+	// The Crossplane reconciler only invokes Delete when the user's
+	// managementPolicies include the Delete action. Skipping Delete on
+	// MR removal is achieved at that level (e.g. by setting policies to
+	// ["Observe","Create","Update"]), not in this code path.
 	fc := &fakeClient{roles: builtInRoles()}
 	e := &external{client: fc}
 
-	cr := newCR("public", nil)
+	cr := newCR("public", []string{"api::article.article.find"})
 	if _, err := e.Delete(context.Background(), cr); err != nil {
 		t.Fatal(err)
 	}
-	if fc.updateCals != 0 {
-		t.Fatal("Delete should not call UpdateRole")
+	if fc.updated == nil {
+		t.Fatal("Delete should call UpdateRole to clear permissions")
+	}
+	if got := strapiclient.FlattenPermissions(fc.updated.Permissions); len(got) != 0 {
+		t.Fatalf("expected empty permissions, got %v", got)
 	}
 }
