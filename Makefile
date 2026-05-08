@@ -143,7 +143,17 @@ strapi-image:
 	@echo "Loading image into kind cluster $(PROJECT_NAME)"
 	@kind load docker-image $(STRAPI_IMAGE_REPO):$(STRAPI_IMAGE_TAG) --name $(PROJECT_NAME)
 
-.PHONY: submodules fallthrough test-integration run dev dev-clean serve serve-clean strapi-image
+# Apply the example manifests against the cluster `make serve` set up:
+# ProviderConfig + ClusterProviderConfig pointing at the in-cluster Strapi,
+# plus RolePermissions for Public and Authenticated. Run after `make serve`
+# is up and the bootstrap Job has registered the admin.
+apply:
+	@kubectl apply -R -f examples/
+
+apply-clean:
+	@kubectl delete -R -f examples/ --ignore-not-found
+
+.PHONY: submodules fallthrough test-integration run dev dev-clean serve serve-clean strapi-image apply apply-clean
 
 # ====================================================================================
 # Special Targets

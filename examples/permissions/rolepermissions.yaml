@@ -7,8 +7,15 @@
 #   authenticated → Strapi's "Authenticated" role (logged-in /api/* access)
 # Other values are matched against role.name (case-insensitive).
 #
-# The Permissions list is authoritative — Strapi's PUT replaces the entire
+# The permissions list is authoritative — Strapi's PUT replaces the entire
 # tree, so anything not listed is revoked on the next reconcile.
+#
+# Permission action format:
+#   plugin::<plugin>.<controller>.<action>      — controller explicit
+#   api::<api>.<contentType>.<action>           — controller implicit (= contentType)
+#
+# A fresh Strapi instance ships with the users-permissions plugin actions
+# below; api::* actions only exist after you create a content type.
 
 apiVersion: permissions.strapi.crossplane.io/v1alpha1
 kind: RolePermissions
@@ -17,14 +24,18 @@ metadata:
   namespace: default
 spec:
   providerConfigRef:
+    kind: ProviderConfig
     name: example
   forProvider:
     role: public
     permissions:
-      - api::article.article.find
-      - api::article.article.findOne
       - plugin::users-permissions.auth.callback
       - plugin::users-permissions.auth.register
+      - plugin::upload.content-api.find
+      - plugin::upload.content-api.findOne
+      # Add api::* actions once a content type exists, e.g.:
+      # - api::article.article.find
+      # - api::article.article.findOne
 ---
 apiVersion: permissions.strapi.crossplane.io/v1alpha1
 kind: RolePermissions
@@ -33,10 +44,10 @@ metadata:
   namespace: default
 spec:
   providerConfigRef:
+    kind: ProviderConfig
     name: example
   forProvider:
     role: authenticated
     permissions:
-      - api::article.article.find
-      - api::article.article.findOne
       - plugin::users-permissions.user.me
+      - plugin::users-permissions.auth.changePassword
