@@ -191,6 +191,16 @@ func (e *external) Observe(ctx context.Context, cr *permv1alpha1.RolePermissions
 
 	meta.SetExternalName(cr, strconv.Itoa(role.ID))
 
+	// During deletion the "external resource" is the configured permission
+	// set, not the role itself (we never delete the role). Once Delete has
+	// recorded a successful clear, report absence so the reconciler removes
+	// the finalizer instead of looping on Delete forever. The flag is only
+	// trusted alongside WasDeleted so a stale value can't suppress a real
+	// observation outside the deletion path.
+	if meta.WasDeleted(cr) && cr.Status.AtProvider.Cleared {
+		return managed.ExternalObservation{ResourceExists: false}, nil
+	}
+
 	current := strapiclient.FlattenPermissions(role.Permissions)
 	desired := append([]string(nil), cr.Spec.ForProvider.Permissions...)
 	sort.Strings(desired)
@@ -245,6 +255,9 @@ func (e *external) Delete(ctx context.Context, cr *permv1alpha1.RolePermissions)
 	if err := e.client.UpdateRole(ctx, role.ID, role); err != nil {
 		return managed.ExternalDelete{}, errors.Wrap(err, errUpdateRole)
 	}
+	// The reconciler runs Status().Update() after Delete, so this flag is
+	// persisted; the next Observe sees it and reports absence.
+	cr.Status.AtProvider.Cleared = true
 	return managed.ExternalDelete{}, nil
 }
 

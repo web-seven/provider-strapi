@@ -163,13 +163,15 @@ func TestObserve_RoleNotFound(t *testing.T) {
 }
 
 func TestObserve_DeletionLifecycle(t *testing.T) {
-	// During deletion, ResourceExists tracks "do we still have permissions
-	// to clear" rather than "does the role exist" — otherwise we'd loop on
-	// Delete forever (we never delete the role itself).
+	// During deletion the "external resource" is the configured permission
+	// set, not the role itself. Observe must keep reporting ResourceExists=true
+	// until Delete has actually run (and recorded the Cleared flag in status),
+	// so the reconciler invokes Delete at least once. After Delete records
+	// success, Observe returns false so the finalizer can drain.
 	now := metav1.Now()
 
-	t.Run("role still has permissions → exists=true", func(t *testing.T) {
-		fc := &fakeClient{roles: builtInRoles()} // public has 1 permission
+	t.Run("Cleared flag unset → exists=true so Delete runs", func(t *testing.T) {
+		fc := &fakeClient{roles: builtInRoles()}
 		e := &external{client: fc}
 
 		cr := newCR("public", nil)
@@ -180,14 +182,16 @@ func TestObserve_DeletionLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 		if !obs.ResourceExists {
-			t.Fatal("expected ResourceExists=true while role still has permissions")
+			t.Fatal("expected ResourceExists=true on first deletion reconcile (Delete must still run)")
 		}
 	})
 
-	t.Run("role permissions cleared → exists=false", func(t *testing.T) {
-		// Simulate a previous Delete having cleared the role.
+	t.Run("Cleared flag unset and role already empty → still exists=true", func(t *testing.T) {
+		// Important: an empty live permission set must NOT short-circuit
+		// the deletion path on its own — Delete is what writes the flag,
+		// and the user wants Delete to be invoked unconditionally.
 		roles := builtInRoles()
-		roles[1].Permissions = nil // public role
+		roles[1].Permissions = nil
 		fc := &fakeClient{roles: roles}
 		e := &external{client: fc}
 
@@ -198,10 +202,40 @@ func TestObserve_DeletionLifecycle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if obs.ResourceExists {
-			t.Fatal("expected ResourceExists=false after Delete cleared permissions")
+		if !obs.ResourceExists {
+			t.Fatal("expected ResourceExists=true while Cleared flag is unset")
 		}
 	})
+
+	t.Run("Cleared flag set → exists=false drains finalizer", func(t *testing.T) {
+		fc := &fakeClient{roles: builtInRoles()}
+		e := &external{client: fc}
+
+		cr := newCR("public", nil)
+		cr.SetDeletionTimestamp(&now)
+		cr.Status.AtProvider.Cleared = true
+
+		obs, err := e.Observe(context.Background(), cr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if obs.ResourceExists {
+			t.Fatal("expected ResourceExists=false once Delete has recorded the Cleared flag")
+		}
+	})
+}
+
+func TestDelete_SetsClearedFlag(t *testing.T) {
+	fc := &fakeClient{roles: builtInRoles()}
+	e := &external{client: fc}
+
+	cr := newCR("public", []string{"api::article.article.find"})
+	if _, err := e.Delete(context.Background(), cr); err != nil {
+		t.Fatal(err)
+	}
+	if !cr.Status.AtProvider.Cleared {
+		t.Fatal("Delete must record Cleared=true so the next Observe drains the finalizer")
+	}
 }
 
 func TestUpdate_PutsPermissions(t *testing.T) {
