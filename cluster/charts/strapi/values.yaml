@@ -1,0 +1,30 @@
+image:
+  repository: ghcr.io/web-seven/strapi
+  tag: ""              # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 1337
+
+# Admin user seeded into Strapi via a post-install Job that hits
+# /admin/register-admin. The credentials are also written to a Secret in
+# the JSON shape ProviderConfig consumes ({"email":...,"password":...}),
+# so the example ProviderConfig can reference it directly.
+admin:
+  email: admin@example.com
+  password: change-me
+
+# Strapi crypto secrets. Hardcoded for the dev loop — this chart is not
+# intended for production. The digando chart handles real secret management.
+applicationSecret:
+  appKeys: "k1==,k2==,k3==,k4=="
+  apiTokenSalt: "dev-api-token-salt"
+  adminJwtSecret: "dev-admin-jwt-secret"
+  jwtSecret: "dev-jwt-secret"
+  transferTokenSalt: "dev-transfer-token-salt"
+
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -1,0 +1,74 @@
+# Post-install Job that registers the first Strapi admin via the
+# /admin/register-admin endpoint. That endpoint is one-shot — once the first
+# admin exists, subsequent calls return 400 — so the Job is safely
+# idempotent across re-installs (the curl returns non-2xx and we ignore it).
+#
+# Hooked post-install/post-upgrade so the Strapi Service + Deployment exist
+# and are reachable; we wait on /_health before attempting registration.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "strapi.fullname" . }}-admin-bootstrap
+  labels: {{- include "strapi.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels: {{- include "strapi.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: admin-bootstrap
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: bootstrap
+          image: curlimages/curl:8.10.1
+          env:
+            - name: STRAPI_URL
+              value: "http://{{ include "strapi.fullname" . }}:{{ .Values.service.port }}"
+            - name: ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "strapi.fullname" . }}-admin
+                  key: email
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "strapi.fullname" . }}-admin
+                  key: password
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+
+              echo "Waiting for Strapi at $STRAPI_URL..."
+              for i in $(seq 1 120); do
+                if curl -fsS -o /dev/null "$STRAPI_URL/_health"; then
+                  echo "Strapi is ready."
+                  break
+                fi
+                sleep 5
+              done
+
+              echo "Registering first admin user..."
+              status=$(curl -sS -o /tmp/resp -w "%{http_code}" \
+                -X POST "$STRAPI_URL/admin/register-admin" \
+                -H 'Content-Type: application/json' \
+                -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\",\"firstname\":\"Admin\",\"lastname\":\"User\"}" || true)
+
+              case "$status" in
+                2*)
+                  echo "Admin registered."
+                  ;;
+                400)
+                  echo "register-admin returned 400 — admin likely already exists. Continuing."
+                  ;;
+                *)
+                  echo "Unexpected status $status from register-admin:"
+                  cat /tmp/resp
+                  exit 1
+                  ;;
+              esac

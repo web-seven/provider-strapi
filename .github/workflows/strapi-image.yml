@@ -1,0 +1,68 @@
+# Build and push the slim Strapi test-instance image
+# (cluster/images/strapi) to ghcr.io/web-seven/strapi.
+#
+# Triggers:
+#   - push of any git tag (e.g. v0.1.0, 0.1.0). Note: tags created by the
+#     `Tag` workflow using GITHUB_TOKEN do NOT trigger this — push tags via
+#     `git push origin <tag>` for the trigger to fire, or use the manual
+#     dispatch below.
+#   - workflow_dispatch: manual fallback / first-time publish before any
+#     tag exists.
+
+name: Strapi image
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag (e.g. 0.1.0). Omit to use ref name.'
+        required: false
+
+jobs:
+  build-push:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: cluster/images/strapi
+          file: cluster/images/strapi/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/web-seven/strapi:${{ steps.tag.outputs.tag }}
+            ghcr.io/web-seven/strapi:latest
