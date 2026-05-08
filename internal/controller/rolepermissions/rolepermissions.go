@@ -50,7 +50,6 @@ const (
 	errNewClient    = "cannot create Strapi client"
 	errListRoles    = "cannot list users-permissions roles"
 	errRoleNotFound = "role not found in Strapi"
-	errBadExtName   = "external-name annotation is not a numeric role ID"
 	errUpdateRole   = "cannot update role permissions"
 )
 
@@ -239,7 +238,10 @@ func (e *external) Disconnect(_ context.Context) error { return nil }
 
 // resolveRole locates the target role: it prefers the cached external-name
 // annotation (numeric role ID) for stability, falling back to selector
-// resolution by type or name.
+// resolution by type or name. A non-numeric external-name (which is what
+// crossplane-runtime's default NameAsExternalName initializer writes — the
+// CR's metadata.name — on first reconcile, before our Observe overwrites
+// it) is treated as "not set" rather than an error.
 func (e *external) resolveRole(ctx context.Context, cr *permv1alpha1.RolePermissions) (strapiclient.Role, error) {
 	roles, err := e.client.ListRoles(ctx)
 	if err != nil {
@@ -247,17 +249,19 @@ func (e *external) resolveRole(ctx context.Context, cr *permv1alpha1.RolePermiss
 	}
 
 	if extName := meta.GetExternalName(cr); extName != "" {
-		id, err := strconv.Atoi(extName)
-		if err != nil {
-			return strapiclient.Role{}, errors.Wrap(err, errBadExtName)
-		}
-		for _, r := range roles {
-			if r.ID == id {
-				return r, nil
+		if id, err := strconv.Atoi(extName); err == nil {
+			for _, r := range roles {
+				if r.ID == id {
+					return r, nil
+				}
 			}
+			// Numeric external-name set but role not found — fall through to
+			// selector resolution so a renumbered or recreated role can be
+			// picked up.
 		}
-		// External name set but role not found — fall through to selector
-		// resolution so a renumbered or recreated role can be picked up.
+		// Non-numeric external-name: ignore and fall through to selector
+		// resolution. Observe will overwrite the annotation with the resolved
+		// role's ID.
 	}
 
 	role, ok := strapiclient.FindRole(roles, cr.Spec.ForProvider.Role)

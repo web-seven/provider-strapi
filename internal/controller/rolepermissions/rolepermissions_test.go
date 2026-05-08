@@ -114,6 +114,30 @@ func TestObserve_DriftDetected(t *testing.T) {
 	}
 }
 
+func TestObserve_NonNumericExternalNameFallsThroughToSelector(t *testing.T) {
+	// crossplane-runtime's default NameAsExternalName initializer writes the
+	// CR's metadata.name as external-name on first reconcile. For
+	// RolePermissions that means "public" / "authenticated", which Atoi
+	// cannot parse. The previous implementation errored out; we now ignore
+	// non-numeric external-names and fall through to selector resolution.
+	fc := &fakeClient{roles: builtInRoles()}
+	e := &external{client: fc}
+
+	cr := newCR("public", []string{"api::article.article.find"})
+	meta.SetExternalName(cr, "public") // simulates the initializer
+
+	obs, err := e.Observe(context.Background(), cr)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !obs.ResourceExists {
+		t.Fatal("expected ResourceExists=true")
+	}
+	if got := meta.GetExternalName(cr); got != "2" {
+		t.Fatalf("Observe should have overwritten external-name with the role ID; got %q", got)
+	}
+}
+
 func TestObserve_InSync(t *testing.T) {
 	fc := &fakeClient{roles: builtInRoles()}
 	e := &external{client: fc}
