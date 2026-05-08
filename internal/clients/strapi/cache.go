@@ -67,7 +67,9 @@ func (c *Cache) Get(cfg Config) (*Client, error) {
 // metric labels, or anything else that might log the key.
 func cacheKey(cfg Config) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%s\x00%s\x00%s\x00%t",
+	// hash.Hash.Write is documented never to return an error, but errcheck
+	// can't see that — discard explicitly.
+	_, _ = fmt.Fprintf(h, "%s\x00%s\x00%s\x00%t",
 		cfg.Endpoint, cfg.Credentials.Email, cfg.Credentials.Password, cfg.InsecureSkipTLSVerify)
 	return hex.EncodeToString(h.Sum(nil))
 }
