@@ -8,7 +8,9 @@ metadata:
 # JWT via POST /admin/login on first use.
 #
 # The base64-encoded value below decodes to:
-#   {"email":"admin@example.com","password":"change-me"}
+#   {"email":"admin@example.com","password":"ChangeMe123"}
+# Note: Strapi enforces password complexity (uppercase + digit) on
+# /admin/register-admin; weaker passwords will fail the chart's bootstrap Job.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -16,7 +18,7 @@ metadata:
   name: example-provider-secret
 type: Opaque
 data:
-  credentials: eyJlbWFpbCI6ImFkbWluQGV4YW1wbGUuY29tIiwicGFzc3dvcmQiOiJjaGFuZ2UtbWUifQ==
+  credentials: eyJlbWFpbCI6ImFkbWluQGV4YW1wbGUuY29tIiwicGFzc3dvcmQiOiJDaGFuZ2VNZTEyMyJ9
 ---
 apiVersion: strapi.crossplane.io/v1alpha1
 kind: ProviderConfig

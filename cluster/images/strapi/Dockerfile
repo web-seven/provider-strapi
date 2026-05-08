@@ -11,17 +11,16 @@ ARG NODE_VERSION=18-alpine
 ARG STRAPI_VERSION=4.20.3
 
 FROM node:${NODE_VERSION} AS bootstrap
+# ARGs declared before the first FROM are only available to FROM lines —
+# re-declare here so the RUN below sees the version.
+ARG STRAPI_VERSION
 WORKDIR /opt/strapi
 # Native build deps for sharp / sqlite3 / etc.
 RUN apk add --no-cache build-base gcompat python3 git
-# Generate a complete Strapi project + run admin panel build. --no-run keeps
-# the boot from happening here; we only want the artifacts.
-RUN npx --yes create-strapi-app@${STRAPI_VERSION} . \
-        --no-run \
-        --skip-cloud \
-        --use-npm \
-        --dbclient=sqlite \
-        --dbfile=./.tmp/data.db \
+# Generate a complete Strapi v4 project. --quickstart picks sqlite and runs
+# non-interactively; --no-run skips the auto-start (we only want the
+# artifacts). Then build the admin panel so the runtime image is self-contained.
+RUN npx --yes create-strapi-app@${STRAPI_VERSION} . --quickstart --no-run \
  && npm run build
 
 FROM node:${NODE_VERSION}

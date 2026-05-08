@@ -11,9 +11,12 @@ service:
 # /admin/register-admin. The credentials are also written to a Secret in
 # the JSON shape ProviderConfig consumes ({"email":...,"password":...}),
 # so the example ProviderConfig can reference it directly.
+#
+# Strapi enforces password complexity on /admin/register-admin: at least
+# one uppercase letter and one digit. The default below satisfies that.
 admin:
   email: admin@example.com
-  password: change-me
+  password: ChangeMe123
 
 # Strapi crypto secrets. Hardcoded for the dev loop — this chart is not
 # intended for production. The digando chart handles real secret management.
