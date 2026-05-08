@@ -1,35 +1,24 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: default
----
-# The credentials secret must contain a JSON object with the admin
-# user's email and password. The provider exchanges these for an admin
-# JWT via POST /admin/login on first use.
+# Example ProviderConfig wired to the in-cluster Strapi deployed by the
+# `cluster/charts/strapi` Helm chart (see `make serve`). The chart writes
+# the admin credentials Secret in the `strapi` namespace; ProviderConfig
+# references it cross-namespace via secretRef.namespace.
 #
-# The base64-encoded value below decodes to:
-#   {"email":"admin@example.com","password":"change-me"}
-apiVersion: v1
-kind: Secret
-metadata:
-  namespace: default
-  name: example-provider-secret
-type: Opaque
-data:
-  credentials: eyJlbWFpbCI6ImFkbWluQGV4YW1wbGUuY29tIiwicGFzc3dvcmQiOiJjaGFuZ2UtbWUifQ==
----
+# To point at your own Strapi instead: change `spec.endpoint` and the
+# `secretRef` to a Secret you control. The Secret value at `key: credentials`
+# must be a JSON object {"email":"...","password":"..."} that the provider
+# exchanges for an admin JWT via POST /admin/login on first use.
 apiVersion: strapi.crossplane.io/v1alpha1
 kind: ProviderConfig
 metadata:
   name: example
   namespace: default
 spec:
-  endpoint: https://strapi.example.com
+  endpoint: http://strapi.strapi.svc.cluster.local:1337
   credentials:
     source: Secret
     secretRef:
-      namespace: default
-      name: example-provider-secret
+      namespace: strapi
+      name: strapi-admin
       key: credentials
 ---
 apiVersion: strapi.crossplane.io/v1alpha1
@@ -37,10 +26,10 @@ kind: ClusterProviderConfig
 metadata:
   name: example
 spec:
-  endpoint: https://strapi.example.com
+  endpoint: http://strapi.strapi.svc.cluster.local:1337
   credentials:
     source: Secret
     secretRef:
-      namespace: default
-      name: example-provider-secret
+      namespace: strapi
+      name: strapi-admin
       key: credentials

@@ -105,20 +105,55 @@ dev-clean: $(KIND) $(KUBECTL)
 	@$(KIND) delete cluster --name=$(PROJECT_NAME)-dev
 
 # Serve the provider against an Overlock-managed Crossplane environment.
-# Creates the env (`overlock env create $(PROJECT_NAME)`) and watches the
-# package source, rebuilding and reloading the provider on changes
-# (`overlock provider serve`).
+# Creates the env, installs the local Strapi test instance Helm chart, then
+# starts the provider with hot-reload via `overlock provider serve`.
 serve:
 	@echo "Creating Overlock environment $(PROJECT_NAME)"
 	@overlock env create $(PROJECT_NAME)
+	@if docker image inspect $(STRAPI_IMAGE_REPO):$(STRAPI_IMAGE_TAG) >/dev/null 2>&1; then \
+		echo "Loading local image $(STRAPI_IMAGE_REPO):$(STRAPI_IMAGE_TAG) into kind cluster $(PROJECT_NAME)"; \
+		kind load docker-image $(STRAPI_IMAGE_REPO):$(STRAPI_IMAGE_TAG) --name $(PROJECT_NAME); \
+	else \
+		echo "Local image $(STRAPI_IMAGE_REPO):$(STRAPI_IMAGE_TAG) not found — the chart will pull from ghcr.io"; \
+		echo "Run 'make strapi-image' first if you want to use a locally-built image."; \
+	fi
+	@echo "Installing Strapi test instance from cluster/charts/strapi"
+	@helm upgrade --install strapi ./cluster/charts/strapi \
+		--namespace strapi --create-namespace --wait \
+		--set image.repository=$(STRAPI_IMAGE_REPO) --set image.tag=$(STRAPI_IMAGE_TAG)
 	@echo "Serving provider via Overlock"
 	@overlock provider serve
 
 serve-clean:
+	@echo "Uninstalling Strapi test instance"
+	@helm uninstall strapi --namespace strapi --ignore-not-found
 	@echo "Deleting Overlock environment $(PROJECT_NAME)"
 	@overlock env delete $(PROJECT_NAME)
 
-.PHONY: submodules fallthrough test-integration run dev dev-clean serve serve-clean
+# Build the slim Strapi image locally and load it into the Overlock-managed
+# kind cluster. Use this once before `make serve` if the
+# `ghcr.io/web-seven/strapi` image hasn't been published yet, or after
+# editing the Dockerfile. Override the tag via STRAPI_IMAGE_TAG.
+STRAPI_IMAGE_REPO ?= ghcr.io/web-seven/strapi
+STRAPI_IMAGE_TAG  ?= dev
+
+strapi-image:
+	@echo "Building $(STRAPI_IMAGE_REPO):$(STRAPI_IMAGE_TAG)"
+	@docker build -t $(STRAPI_IMAGE_REPO):$(STRAPI_IMAGE_TAG) cluster/images/strapi
+	@echo "Loading image into kind cluster $(PROJECT_NAME)"
+	@kind load docker-image $(STRAPI_IMAGE_REPO):$(STRAPI_IMAGE_TAG) --name $(PROJECT_NAME)
+
+# Apply the example manifests against the cluster `make serve` set up:
+# ProviderConfig + ClusterProviderConfig pointing at the in-cluster Strapi,
+# plus RolePermissions for Public and Authenticated. Run after `make serve`
+# is up and the bootstrap Job has registered the admin.
+apply:
+	@kubectl apply -R -f examples/
+
+apply-clean:
+	@kubectl delete -R -f examples/ --ignore-not-found
+
+.PHONY: submodules fallthrough test-integration run dev dev-clean serve serve-clean strapi-image apply apply-clean
 
 # ====================================================================================
 # Special Targets

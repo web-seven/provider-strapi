@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "strapi.fullname" . }}
+  labels: {{- include "strapi.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {{- include "strapi.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "strapi.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: strapi
+          image: {{ include "strapi.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 1337
+          envFrom:
+            - secretRef:
+                name: {{ include "strapi.fullname" . }}-env
+          readinessProbe:
+            httpGet:
+              path: /_health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /_health
+              port: http
+            periodSeconds: 30
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
