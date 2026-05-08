@@ -56,12 +56,17 @@ jobs:
             echo "tag=${GITHUB_REF##*/}" >> "$GITHUB_OUTPUT"
           fi
 
+      # arm64 build under QEMU is ~10-20× slower than native and Strapi's
+      # `create-strapi-app` install pulls hundreds of packages; the cumulative
+      # download time hits npm/yarn socket timeouts mid-install. Until we have
+      # a native arm64 runner this workflow is amd64-only. arm64 hosts (M1/M2)
+      # can rebuild locally via `make strapi-image` for the host arch.
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: cluster/images/strapi
           file: cluster/images/strapi/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: |
             ghcr.io/web-seven/strapi:${{ steps.tag.outputs.tag }}
