@@ -53,14 +53,15 @@ const (
 	errUpdateRole   = "cannot update role permissions"
 )
 
-// SetupGated registers the controller with safe-start support.
+// SetupGated registers the controller. The "Gated" name is preserved for
+// continuity with the upstream provider-template's call sites; the safe-start
+// CRD gate has been removed because the provider's auto-generated ClusterRole
+// did not include `apiextensions.k8s.io/customresourcedefinitions` watch
+// permissions, causing the gate's CRD informer to time out and the manager
+// to refuse to start. CRDs in this package are installed by Crossplane
+// before the provider container starts, so gating is unnecessary.
 func SetupGated(mgr ctrl.Manager, o controller.Options) error {
-	o.Gate.Register(func() {
-		if err := Setup(mgr, o); err != nil {
-			panic(errors.Wrap(err, "cannot setup RolePermissions controller"))
-		}
-	}, permv1alpha1.RolePermissionsGroupVersionKind)
-	return nil
+	return Setup(mgr, o)
 }
 
 // Setup adds a controller that reconciles RolePermissions managed resources.
