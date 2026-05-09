@@ -37,10 +37,10 @@ IMAGES = provider-strapi
 # ====================================================================================
 # Setup XPKG
 
-XPKG_REG_ORGS ?= xpkg.upbound.io/crossplane
+XPKG_REG_ORGS ?= xpkg.upbound.io/web-seven
 # NOTE(hasheddan): skip promoting on xpkg.upbound.io as channel tags are
 # inferred.
-XPKG_REG_ORGS_NO_PROMOTE ?= xpkg.upbound.io/crossplane
+XPKG_REG_ORGS_NO_PROMOTE ?= xpkg.upbound.io/web-seven
 XPKGS = provider-strapi
 -include build/makelib/xpkg.mk
 

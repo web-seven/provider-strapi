@@ -245,6 +245,9 @@ jobs:
           name: output
           path: _output/**
 
+      # Only push dev/branch builds to the marketplace when the push is to
+      # the main branch. Release tags are handled by release.yml instead,
+      # which publishes a proper semver-tagged revision.
       - name: Publish Artifacts
-        if: env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
+        if: env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != '' && github.ref == 'refs/heads/main'
         run: make publish BRANCH_NAME=${GITHUB_REF##*/}

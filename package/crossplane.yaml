@@ -3,9 +3,56 @@ kind: Provider
 metadata:
   name: provider-strapi
   annotations:
-    meta.crossplane.io/maintainer: Crossplane Maintainers <info@crossplane.io>
+    meta.crossplane.io/maintainer: web-seven <info@web-seven.io>
     meta.crossplane.io/source: github.com/web-seven/provider-strapi
     meta.crossplane.io/license: Apache-2.0
     meta.crossplane.io/description: |
-      Crossplane provider for Strapi.
+      Crossplane provider for Strapi v4. Manages Strapi users-permissions
+      roles and their permission sets declaratively via Kubernetes custom
+      resources.
+    meta.crossplane.io/readme: |
+      # provider-strapi
+
+      A [Crossplane](https://crossplane.io) provider that manages
+      [Strapi v4](https://strapi.io) resources declaratively as Kubernetes
+      custom resources.
+
+      ## Features
+
+      - **RolePermissions** — declare the full permission set for a
+        Strapi users-permissions role (built-in `Public`/`Authenticated`
+        resolved by type, custom roles by name). Strapi's `PUT` is
+        full-replace, so the spec's `permissions` list is always authoritative.
+      - **ProviderConfig / ClusterProviderConfig** — supply Strapi endpoint
+        and admin credentials (email + password) via a Kubernetes Secret.
+        Supports optional `insecureSkipTLSVerify` for self-signed certificates.
+
+      ## Getting started
+
+      ```yaml
+      apiVersion: strapi.crossplane.io/v1alpha1
+      kind: ClusterProviderConfig
+      metadata:
+        name: default
+      spec:
+        endpoint: https://strapi.example.com
+        credentials:
+          source: Secret
+          secretRef:
+            namespace: crossplane-system
+            name: strapi-creds
+            key: credentials
+      ```
+
+      The secret payload must be JSON: `{"email":"admin@example.com","password":"..."}`.
+
+      ## Managed resources
+
+      | Kind | Group | Scope |
+      |------|-------|-------|
+      | RolePermissions | permissions.strapi.crossplane.io | Namespaced |
+      | ProviderConfig | strapi.crossplane.io | Namespaced |
+      | ClusterProviderConfig | strapi.crossplane.io | Cluster |
+    meta.crossplane.io/category: application
+    meta.crossplane.io/icon-data-uri: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4IiBmaWxsPSJub25lIj4KICA8cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjIwIiBmaWxsPSIjNDk0NUZGIi8+CiAgPCEtLSBUb3AgYmFyIC0tPgogIDxyZWN0IHg9IjE2IiB5PSIxNiIgd2lkdGg9IjY4IiBoZWlnaHQ9IjI4IiByeD0iNiIgZmlsbD0id2hpdGUiLz4KICA8IS0tIE1pZGRsZSBiYXIgKHJpZ2h0LWFsaWduZWQpIC0tPgogIDxyZWN0IHg9IjQ0IiB5PSI1MCIgd2lkdGg9IjY4IiBoZWlnaHQ9IjI4IiByeD0iNiIgZmlsbD0id2hpdGUiLz4KICA8IS0tIEJvdHRvbSBiYXIgLS0+CiAgPHJlY3QgeD0iMTYiIHk9Ijg0IiB3aWR0aD0iNjgiIGhlaWdodD0iMjgiIHJ4PSI2IiBmaWxsPSJ3aGl0ZSIvPgogIDwhLS0gQ29ubmVjdG9yIHRvcC1yaWdodCAtLT4KICA8cmVjdCB4PSI2OCIgeT0iMTYiIHdpZHRoPSIyOCIgaGVpZ2h0PSIzNCIgcng9IjAiIGZpbGw9IndoaXRlIi8+CiAgPCEtLSBDb25uZWN0b3IgYm90dG9tLWxlZnQgLS0+CiAgPHJlY3QgeD0iMTYiIHk9Ijc4IiB3aWR0aD0iMjgiIGhlaWdodD0iMzQiIHJ4PSIwIiBmaWxsPSJ3aGl0ZSIvPgo8L3N2Zz4K
 spec: {}
