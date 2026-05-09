@@ -130,6 +130,24 @@ type connector struct {
 	newClientFn func(cfg strapiclient.Config) (strapiClient, error)
 }
 
+// providerConfigRef returns the name and kind of the ProviderConfig to use.
+// If the CR has no providerConfigRef, it defaults to the ClusterProviderConfig
+// named "default" (the Crossplane v2.2 platform default).
+func providerConfigRef(cr *permv1alpha1.RolePermissions) (name, kind string) {
+	name, kind = "default", "ClusterProviderConfig"
+	ref := cr.GetProviderConfigReference()
+	if ref == nil {
+		return
+	}
+	if ref.Name != "" {
+		name = ref.Name
+	}
+	if ref.Kind != "" {
+		kind = ref.Kind
+	}
+	return
+}
+
 func (c *connector) Connect(ctx context.Context, cr *permv1alpha1.RolePermissions) (managed.TypedExternalClient[*permv1alpha1.RolePermissions], error) {
 	if err := c.usage.Track(ctx, cr); err != nil {
 		return nil, errors.Wrap(err, errTrackPCUsage)
@@ -141,18 +159,7 @@ func (c *connector) Connect(ctx context.Context, cr *permv1alpha1.RolePermission
 		credsSelect apisv1alpha1.ProviderCredentials
 	)
 
-	// Crossplane v2.2 default: omitted providerConfigRef resolves to
-	// ClusterProviderConfig named "default".
-	refName := "default"
-	refKind := "ClusterProviderConfig"
-	if ref := cr.GetProviderConfigReference(); ref != nil {
-		if ref.Name != "" {
-			refName = ref.Name
-		}
-		if ref.Kind != "" {
-			refKind = ref.Kind
-		}
-	}
+	refName, refKind := providerConfigRef(cr)
 
 	switch refKind {
 	case "ProviderConfig":
