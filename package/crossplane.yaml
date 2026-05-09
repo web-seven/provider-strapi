@@ -3,9 +3,12 @@ kind: Provider
 metadata:
   name: provider-strapi
   annotations:
-    meta.crossplane.io/maintainer: Crossplane Maintainers <info@crossplane.io>
+    meta.crossplane.io/maintainer: web-seven <info@web-seven.io>
     meta.crossplane.io/source: github.com/web-seven/provider-strapi
     meta.crossplane.io/license: Apache-2.0
     meta.crossplane.io/description: |
-      Crossplane provider for Strapi.
+      Manage Strapi v4 users-permissions roles and permission sets
+      declaratively from Kubernetes via Crossplane.
+    meta.crossplane.io/category: application
+    meta.crossplane.io/iconURI: https://raw.githubusercontent.com/web-seven/provider-strapi/main/assets/images/strapi-icon.png
 spec: {}

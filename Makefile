@@ -37,10 +37,10 @@ IMAGES = provider-strapi
 # ====================================================================================
 # Setup XPKG
 
-XPKG_REG_ORGS ?= xpkg.upbound.io/crossplane
+XPKG_REG_ORGS ?= xpkg.upbound.io/web-seven
 # NOTE(hasheddan): skip promoting on xpkg.upbound.io as channel tags are
 # inferred.
-XPKG_REG_ORGS_NO_PROMOTE ?= xpkg.upbound.io/crossplane
+XPKG_REG_ORGS_NO_PROMOTE ?= xpkg.upbound.io/web-seven
 XPKGS = provider-strapi
 -include build/makelib/xpkg.mk
 
@@ -154,6 +154,34 @@ apply-clean:
 	@kubectl delete -R -f examples/ --ignore-not-found
 
 .PHONY: submodules fallthrough test-integration run dev dev-clean serve serve-clean strapi-image apply apply-clean
+
+# ====================================================================================
+# Marketplace Extensions
+#
+# Upbound Marketplace renders icon and readme from a tarball appended to the
+# published xpkg via `up alpha xpkg append`. Sources are kept single-rooted in
+# the repo (assets/images/strapi-icon.png, docs/marketplace.md); the extensions
+# tree is assembled at build time under $(OUTPUT_DIR)/extensions and never
+# committed.
+
+EXTENSIONS_DIR ?= _output/extensions
+EXTENSIONS_ICON ?= assets/images/strapi-icon.png
+EXTENSIONS_README ?= docs/marketplace.md
+EXTENSIONS_SOURCE ?= xpkg.upbound.io/web-seven/$(PROJECT_NAME):$(VERSION)
+EXTENSIONS_DESTINATION ?= xpkg.upbound.io/web-seven/$(PROJECT_NAME):$(VERSION)
+
+package.extensions:
+	@echo "Assembling marketplace extensions tree at $(EXTENSIONS_DIR)"
+	@rm -rf $(EXTENSIONS_DIR)
+	@mkdir -p $(EXTENSIONS_DIR)/icons $(EXTENSIONS_DIR)/readme
+	@cp $(EXTENSIONS_ICON) $(EXTENSIONS_DIR)/icons/icon.png
+	@cp $(EXTENSIONS_README) $(EXTENSIONS_DIR)/readme/readme.md
+
+publish.extensions: package.extensions
+	@echo "Appending marketplace extensions from $(EXTENSIONS_SOURCE) to $(EXTENSIONS_DESTINATION)"
+	@up alpha xpkg append --extensions-root=$(EXTENSIONS_DIR) --destination=$(EXTENSIONS_DESTINATION) $(EXTENSIONS_SOURCE)
+
+.PHONY: package.extensions publish.extensions
 
 # ====================================================================================
 # Special Targets

@@ -1,0 +1,137 @@
+name: Publish Provider Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  GO_VERSION: '1.23'
+  DOCKER_BUILDX_VERSION: 'v0.23.0'
+
+  # Copy secrets to env so we can test for their presence without
+  # 'secrets.XXX != ""' (which is not allowed in 'if' expressions).
+  XPKG_ACCESS_ID: ${{ secrets.XPKG_ACCESS_ID }}
+
+jobs:
+  publish-release:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+
+    steps:
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v2
+        with:
+          platforms: all
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          version: ${{ env.DOCKER_BUILDX_VERSION }}
+          install: true
+
+      - name: Login to Upbound Marketplace
+        uses: docker/login-action@v1
+        if: env.XPKG_ACCESS_ID != ''
+        with:
+          registry: xpkg.upbound.io
+          username: ${{ secrets.XPKG_ACCESS_ID }}
+          password: ${{ secrets.XPKG_TOKEN }}
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Fetch History
+        run: git fetch --prune --unshallow
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Find the Go Build Cache
+        id: go
+        run: echo "cachedir=$(make go.cachedir)" >> $GITHUB_ENV
+
+      - name: Cache the Go Build Cache
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.cachedir }}
+          key: ${{ runner.os }}-build-release-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-build-release-
+
+      - name: Cache Go Dependencies
+        uses: actions/cache@v5
+        with:
+          path: .work/pkg
+          key: ${{ runner.os }}-pkg-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-pkg-
+
+      - name: Download Go Modules
+        run: make modules.download modules.check
+
+      # Strip a leading 'v' from the tag so VERSION is a plain semver,
+      # e.g. tag "v0.1.0" → VERSION "0.1.0".  Tags without a 'v' prefix
+      # (e.g. "0.1.0") are used as-is.
+      - name: Resolve release version
+        id: version
+        run: |
+          TAG=${GITHUB_REF##*/}
+          VERSION=${TAG#v}
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Build Artifacts
+        run: make -j2 build.all
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_ARGS: "--load"
+
+      - name: Publish Artifacts to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ steps.version.outputs.tag }}
+          path: _output/**
+
+      - name: Publish to Upbound Marketplace
+        if: env.XPKG_ACCESS_ID != ''
+        run: make publish BRANCH_NAME=${{ steps.version.outputs.version }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+
+  append-marketplace-extensions:
+    needs: publish-release
+    runs-on: ubuntu-22.04
+    if: ${{ needs.publish-release.result == 'success' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install up CLI
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sL https://cli.upbound.io | UP_CHANNEL=stable sh
+          mv up "$HOME/.local/bin/up"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Show up version
+        run: up version
+
+      - name: Login to Upbound Marketplace
+        if: env.XPKG_ACCESS_ID != ''
+        uses: docker/login-action@v3
+        with:
+          registry: xpkg.upbound.io
+          username: ${{ secrets.XPKG_ACCESS_ID }}
+          password: ${{ secrets.XPKG_TOKEN }}
+
+      - name: Append marketplace extensions
+        if: env.XPKG_ACCESS_ID != ''
+        run: make publish.extensions
+        env:
+          VERSION: ${{ needs.publish-release.outputs.version }}
