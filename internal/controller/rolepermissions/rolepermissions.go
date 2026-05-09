@@ -141,22 +141,34 @@ func (c *connector) Connect(ctx context.Context, cr *permv1alpha1.RolePermission
 		credsSelect apisv1alpha1.ProviderCredentials
 	)
 
-	ref := cr.GetProviderConfigReference()
-	switch ref.Kind {
+	// Crossplane v2.2 default: omitted providerConfigRef resolves to
+	// ClusterProviderConfig named "default".
+	refName := "default"
+	refKind := "ClusterProviderConfig"
+	if ref := cr.GetProviderConfigReference(); ref != nil {
+		if ref.Name != "" {
+			refName = ref.Name
+		}
+		if ref.Kind != "" {
+			refKind = ref.Kind
+		}
+	}
+
+	switch refKind {
 	case "ProviderConfig":
 		pc := &apisv1alpha1.ProviderConfig{}
-		if err := c.kube.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: cr.GetNamespace()}, pc); err != nil {
+		if err := c.kube.Get(ctx, types.NamespacedName{Name: refName, Namespace: cr.GetNamespace()}, pc); err != nil {
 			return nil, errors.Wrap(err, errGetPC)
 		}
 		endpoint, insecure, credsSelect = pc.Spec.Endpoint, pc.Spec.InsecureSkipTLSVerify, pc.Spec.Credentials
 	case "ClusterProviderConfig":
 		cpc := &apisv1alpha1.ClusterProviderConfig{}
-		if err := c.kube.Get(ctx, types.NamespacedName{Name: ref.Name}, cpc); err != nil {
+		if err := c.kube.Get(ctx, types.NamespacedName{Name: refName}, cpc); err != nil {
 			return nil, errors.Wrap(err, errGetCPC)
 		}
 		endpoint, insecure, credsSelect = cpc.Spec.Endpoint, cpc.Spec.InsecureSkipTLSVerify, cpc.Spec.Credentials
 	default:
-		return nil, errors.Errorf("unsupported provider config kind: %s", ref.Kind)
+		return nil, errors.Errorf("unsupported provider config kind: %s", refKind)
 	}
 
 	credBytes, err := resource.CommonCredentialExtractor(ctx, credsSelect.Source, c.kube, credsSelect.CommonCredentialSelectors)
