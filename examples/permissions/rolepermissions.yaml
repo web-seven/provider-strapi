@@ -51,3 +51,17 @@ spec:
     permissions:
       - plugin::users-permissions.user.me
       - plugin::users-permissions.auth.changePassword
+---
+# Crossplane v2.2 ergonomics: omit providerConfigRef entirely to use the
+# ClusterProviderConfig named "default" (the v2.2 platform default).
+apiVersion: permissions.strapi.crossplane.io/v1alpha1
+kind: RolePermissions
+metadata:
+  name: public-default-provider
+  namespace: default
+spec:
+  forProvider:
+    role: public
+    permissions:
+      - plugin::users-permissions.auth.callback
+      - plugin::users-permissions.auth.register

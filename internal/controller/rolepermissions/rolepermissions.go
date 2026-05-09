@@ -130,6 +130,24 @@ type connector struct {
 	newClientFn func(cfg strapiclient.Config) (strapiClient, error)
 }
 
+// providerConfigRef returns the name and kind of the ProviderConfig to use.
+// If the CR has no providerConfigRef, it defaults to the ClusterProviderConfig
+// named "default" (the Crossplane v2.2 platform default).
+func providerConfigRef(cr *permv1alpha1.RolePermissions) (name, kind string) {
+	name, kind = "default", "ClusterProviderConfig"
+	ref := cr.GetProviderConfigReference()
+	if ref == nil {
+		return
+	}
+	if ref.Name != "" {
+		name = ref.Name
+	}
+	if ref.Kind != "" {
+		kind = ref.Kind
+	}
+	return
+}
+
 func (c *connector) Connect(ctx context.Context, cr *permv1alpha1.RolePermissions) (managed.TypedExternalClient[*permv1alpha1.RolePermissions], error) {
 	if err := c.usage.Track(ctx, cr); err != nil {
 		return nil, errors.Wrap(err, errTrackPCUsage)
@@ -141,22 +159,23 @@ func (c *connector) Connect(ctx context.Context, cr *permv1alpha1.RolePermission
 		credsSelect apisv1alpha1.ProviderCredentials
 	)
 
-	ref := cr.GetProviderConfigReference()
-	switch ref.Kind {
+	refName, refKind := providerConfigRef(cr)
+
+	switch refKind {
 	case "ProviderConfig":
 		pc := &apisv1alpha1.ProviderConfig{}
-		if err := c.kube.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: cr.GetNamespace()}, pc); err != nil {
+		if err := c.kube.Get(ctx, types.NamespacedName{Name: refName, Namespace: cr.GetNamespace()}, pc); err != nil {
 			return nil, errors.Wrap(err, errGetPC)
 		}
 		endpoint, insecure, credsSelect = pc.Spec.Endpoint, pc.Spec.InsecureSkipTLSVerify, pc.Spec.Credentials
 	case "ClusterProviderConfig":
 		cpc := &apisv1alpha1.ClusterProviderConfig{}
-		if err := c.kube.Get(ctx, types.NamespacedName{Name: ref.Name}, cpc); err != nil {
+		if err := c.kube.Get(ctx, types.NamespacedName{Name: refName}, cpc); err != nil {
 			return nil, errors.Wrap(err, errGetCPC)
 		}
 		endpoint, insecure, credsSelect = cpc.Spec.Endpoint, cpc.Spec.InsecureSkipTLSVerify, cpc.Spec.Credentials
 	default:
-		return nil, errors.Errorf("unsupported provider config kind: %s", ref.Kind)
+		return nil, errors.Errorf("unsupported provider config kind: %s", refKind)
 	}
 
 	credBytes, err := resource.CommonCredentialExtractor(ctx, credsSelect.Source, c.kube, credsSelect.CommonCredentialSelectors)
