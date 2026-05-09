@@ -16,6 +16,9 @@ env:
 jobs:
   publish-release:
     runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
 
     steps:
       - name: Setup QEMU
@@ -99,3 +102,36 @@ jobs:
         run: make publish BRANCH_NAME=${{ steps.version.outputs.version }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
+
+  append-marketplace-extensions:
+    needs: publish-release
+    runs-on: ubuntu-22.04
+    if: ${{ needs.publish-release.result == 'success' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install up CLI
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sL https://cli.upbound.io | UP_CHANNEL=stable sh
+          mv up "$HOME/.local/bin/up"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Show up version
+        run: up version
+
+      - name: Login to Upbound Marketplace
+        if: env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
+        uses: docker/login-action@v3
+        with:
+          registry: xpkg.upbound.io
+          username: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR }}
+          password: ${{ secrets.UPBOUND_MARKETPLACE_PUSH_ROBOT_PSW }}
+
+      - name: Append marketplace extensions
+        if: env.UPBOUND_MARKETPLACE_PUSH_ROBOT_USR != ''
+        run: make publish.extensions
+        env:
+          VERSION: ${{ needs.publish-release.outputs.version }}
