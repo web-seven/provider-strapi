@@ -74,16 +74,12 @@ jobs:
       - name: Download Go Modules
         run: make modules.download modules.check
 
-      # Strip a leading 'v' from the tag so VERSION is a plain semver,
-      # e.g. tag "v0.1.0" → VERSION "0.1.0".  Tags without a 'v' prefix
-      # (e.g. "0.1.0") are used as-is.
       - name: Resolve release version
         id: version
         run: |
           TAG=${GITHUB_REF##*/}
-          VERSION=${TAG#v}
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "version=${TAG}" >> $GITHUB_OUTPUT
 
       - name: Build Artifacts
         run: make -j2 build.all
@@ -99,7 +95,8 @@ jobs:
 
       - name: Publish to Upbound Marketplace
         if: env.XPKG_ACCESS_ID != ''
-        run: make publish BRANCH_NAME=${{ steps.version.outputs.version }}
+        # BRANCH_NAME must match xpkg.mk's RELEASE_BRANCH_FILTER or publish.artifacts is a silent no-op.
+        run: make publish BRANCH_NAME=main
         env:
           VERSION: ${{ steps.version.outputs.version }}
 
