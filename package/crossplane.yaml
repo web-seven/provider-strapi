@@ -7,8 +7,8 @@ metadata:
     meta.crossplane.io/source: github.com/web-seven/provider-strapi
     meta.crossplane.io/license: Apache-2.0
     meta.crossplane.io/description: |
-      Manage Strapi v4 users-permissions roles and permission sets
-      declaratively from Kubernetes via Crossplane.
+      Manage Strapi v4 resources declaratively from Kubernetes via
+      Crossplane.
     meta.crossplane.io/category: application
-    meta.crossplane.io/iconURI: https://raw.githubusercontent.com/web-seven/provider-strapi/main/assets/images/strapi-icon.png
+    meta.crossplane.io/iconURI: https://raw.githubusercontent.com/web-seven/provider-strapi/main/assets/images/icon.svg
 spec: {}

@@ -4,15 +4,26 @@ Manage [Strapi v4](https://strapi.io) resources declaratively from Kubernetes vi
 
 ## Features
 
-- **RolePermissions** — declare the full permission set for a Strapi
-  users-permissions role. Built-in `Public` and `Authenticated` roles are
-  resolved by `type`; custom roles by name. Strapi's `PUT` is full-replace,
-  so the spec's `permissions` list is always authoritative.
-- **ProviderConfig / ClusterProviderConfig** — supply Strapi endpoint and
-  admin credentials (email + password) via a Kubernetes `Secret`. Supports
-  `insecureSkipTLSVerify` for self-signed certificates.
-- **Crossplane composition** — compose Strapi resources together with any
-  other Crossplane provider.
+- **Declarative Strapi management** — control Strapi instances from
+  Kubernetes manifests, reconciled continuously by Crossplane.
+- **Admin API auth** — point the provider at any reachable Strapi v4
+  endpoint with admin credentials (email + password) supplied via a
+  Kubernetes `Secret`. `insecureSkipTLSVerify` is available for
+  self-signed certificates.
+- **Namespaced and cluster-scoped configuration** — `ProviderConfig`
+  (namespaced) and `ClusterProviderConfig` (cluster-scoped) cover both
+  multi-tenant and shared-instance topologies.
+- **Composable** — combine Strapi resources with any other Crossplane
+  provider via Compositions.
+
+## Available resources
+
+The provider currently ships:
+
+- `RolePermissions` (`permissions.strapi.crossplane.io/v1alpha1`) — manage
+  the permission set on a users-permissions role.
+
+Additional managed resources are planned.
 
 ## Install
 
@@ -77,14 +88,11 @@ spec:
 If the managed resource omits `providerConfigRef`, Crossplane v2 defaults
 to `name: default`, `kind: ClusterProviderConfig`.
 
-## Usage
+## Example
 
-### RolePermissions
-
-Manages the permission set on an existing users-permissions role.
-Permissions are declared in the flat Strapi v4 form
-(`api::<api>.<contentType>.<action>` for content APIs,
-`plugin::<plugin>.<controller>.<action>` for plugins).
+Declare a managed resource referencing the `ClusterProviderConfig` above.
+The example uses `RolePermissions` (the resource shipped today); other
+Strapi resources will follow the same pattern.
 
 ```yaml
 apiVersion: permissions.strapi.crossplane.io/v1alpha1
@@ -101,13 +109,7 @@ spec:
       - plugin::users-permissions.auth.callback
 ```
 
-`Delete` clears the configured permissions from the role; the role
-itself is never removed (built-in roles cannot be deleted, and custom
-role lifecycle is intentionally out of scope).
-
-## Examples
-
-See the [`examples/`](https://github.com/web-seven/provider-strapi/tree/main/examples) directory for sample `ProviderConfig` and `RolePermissions` manifests.
+More samples live in [`examples/`](https://github.com/web-seven/provider-strapi/tree/main/examples).
 
 ## Source
 
