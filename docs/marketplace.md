@@ -17,7 +17,7 @@ Manage [Strapi v4](https://strapi.io) resources declaratively from Kubernetes vi
 ## Install
 
 ```bash
-crossplane xpkg install provider xpkg.upbound.io/web-seven/provider-strapi:v0.1.0
+crossplane xpkg install provider xpkg.upbound.io/web7/provider-strapi:v0.1.0
 ```
 
 Or as a manifest:
@@ -28,7 +28,7 @@ kind: Provider
 metadata:
   name: provider-strapi
 spec:
-  package: xpkg.upbound.io/web-seven/provider-strapi:v0.1.0
+  package: xpkg.upbound.io/web7/provider-strapi:v0.1.0
 ```
 
 ## Prerequisites

@@ -37,10 +37,10 @@ IMAGES = provider-strapi
 # ====================================================================================
 # Setup XPKG
 
-XPKG_REG_ORGS ?= xpkg.upbound.io/web-seven
+XPKG_REG_ORGS ?= xpkg.upbound.io/web7
 # NOTE(hasheddan): skip promoting on xpkg.upbound.io as channel tags are
 # inferred.
-XPKG_REG_ORGS_NO_PROMOTE ?= xpkg.upbound.io/web-seven
+XPKG_REG_ORGS_NO_PROMOTE ?= xpkg.upbound.io/web7
 XPKGS = provider-strapi
 -include build/makelib/xpkg.mk
 
@@ -167,8 +167,8 @@ apply-clean:
 EXTENSIONS_DIR ?= _output/extensions
 EXTENSIONS_ICON ?= assets/images/strapi-icon.png
 EXTENSIONS_README ?= docs/marketplace.md
-EXTENSIONS_SOURCE ?= xpkg.upbound.io/web-seven/$(PROJECT_NAME):$(VERSION)
-EXTENSIONS_DESTINATION ?= xpkg.upbound.io/web-seven/$(PROJECT_NAME):$(VERSION)
+EXTENSIONS_SOURCE ?= xpkg.upbound.io/web7/$(PROJECT_NAME):$(VERSION)
+EXTENSIONS_DESTINATION ?= xpkg.upbound.io/web7/$(PROJECT_NAME):$(VERSION)
 
 package.extensions:
 	@echo "Assembling marketplace extensions tree at $(EXTENSIONS_DIR)"
