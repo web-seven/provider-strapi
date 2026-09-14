@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha1
+package v2alpha1
 
 import (
 	"reflect"
@@ -26,7 +26,7 @@ import (
 // Package type metadata.
 const (
 	Group   = "permissions.strapi.crossplane.io"
-	Version = "v1alpha1"
+	Version = "v2alpha1"
 )
 
 var (

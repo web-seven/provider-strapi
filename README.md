@@ -2,17 +2,19 @@
 
 A [Crossplane](https://crossplane.io/) provider for [Strapi](https://strapi.io/).
 Manages Strapi resources declaratively as Kubernetes custom resources, against
-a running Strapi v4 instance.
+a running Strapi v5 instance.
 
-> Status: alpha. Targets Strapi v4 (`@strapi/strapi 4.20.x`). Strapi v5 support
-> will land when the upstream API delta is known.
+> Status: alpha. Targets Strapi v5 (`@strapi/strapi 5.x`) with the `v2alpha1`
+> API version. The Strapi v4 / `v1alpha1` provider is deprecated and maintained
+> on the [`v1`](https://github.com/web-seven/provider-strapi/tree/v1) branch,
+> where fixes are backported on request.
 
 ## Resources
 
 | API group | Kind | What it does |
 |---|---|---|
-| `strapi.crossplane.io/v1alpha1` | `ProviderConfig` / `ClusterProviderConfig` | Endpoint + admin email/password used to authenticate against a Strapi instance. |
-| `permissions.strapi.crossplane.io/v1alpha1` | `RolePermissions` | Manages the permission set of a users-permissions role (built-in `Public` / `Authenticated` or any existing custom role). |
+| `strapi.crossplane.io/v2alpha1` | `ProviderConfig` / `ClusterProviderConfig` | Endpoint + admin email/password used to authenticate against a Strapi instance. |
+| `permissions.strapi.crossplane.io/v2alpha1` | `RolePermissions` | Manages the permission set of a users-permissions role (built-in `Public` / `Authenticated` or any existing custom role). |
 
 See `examples/` for ready-to-apply manifests.
 
@@ -27,8 +29,9 @@ storing their credentials in a Kubernetes Secret. The Secret payload is JSON:
 ```
 
 `ProviderConfig` references that Secret. On first use the provider POSTs to
-`/admin/login`, caches the returned JWT, and re-logs in once on a 401
-response (handles JWT expiry transparently).
+`/admin/login`, caches the returned access token, and re-logs in once on a 401
+response. Strapi v5 access tokens expire after 30 minutes by default, so this
+happens transparently in the background.
 
 ## Quick start
 
@@ -42,7 +45,7 @@ stringData:
   credentials: '{"email":"admin@example.com","password":"change-me"}'
 ---
 # 2. ProviderConfig pointing at the Strapi instance + secret
-apiVersion: strapi.crossplane.io/v1alpha1
+apiVersion: strapi.crossplane.io/v2alpha1
 kind: ProviderConfig
 metadata: { name: example, namespace: default }
 spec:
@@ -52,7 +55,7 @@ spec:
     secretRef: { namespace: default, name: strapi-admin, key: credentials }
 ---
 # 3. Manage the Public role's permissions
-apiVersion: permissions.strapi.crossplane.io/v1alpha1
+apiVersion: permissions.strapi.crossplane.io/v2alpha1
 kind: RolePermissions
 metadata: { name: public, namespace: default }
 spec:

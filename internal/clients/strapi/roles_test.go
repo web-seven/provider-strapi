@@ -120,20 +120,28 @@ func newRolesServer(t *testing.T) *rolesServer {
 			"data": map[string]any{"token": "tok"},
 		})
 	})
+	// Strapi v5 lists roles without their permission trees.
 	mux.HandleFunc("/users-permissions/roles", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"roles": []Role{
-				{ID: 1, Name: "Authenticated", Type: "authenticated"},
-				{ID: 2, Name: "Public", Type: "public", Permissions: PermissionsByResource{
-					"api::article.article": {Controllers: map[string]map[string]Action{
-						"article": {"find": {Enabled: true}},
-					}},
-				}},
+				{ID: 1, DocumentID: "doc-auth", Name: "Authenticated", Type: "authenticated"},
+				{ID: 2, DocumentID: "doc-public", Name: "Public", Type: "public"},
 			},
 		})
 	})
 	mux.HandleFunc("/users-permissions/roles/2", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"role": Role{ID: 2, DocumentID: "doc-public", Name: "Public", Type: "public", Permissions: PermissionsByResource{
+					"api::article.article": {Controllers: map[string]map[string]Action{
+						"article": {"find": {Enabled: true}},
+					}},
+				}},
+			})
+			return
+		}
 		if r.Method != http.MethodPut {
 			http.NotFound(w, r)
 			return
@@ -168,9 +176,19 @@ func TestClient_ListAndUpdateRole(t *testing.T) {
 		t.Fatalf("got %d roles", len(roles))
 	}
 
-	pub, ok := FindRole(roles, "public")
+	found, ok := FindRole(roles, "public")
 	if !ok {
 		t.Fatal("public role missing")
+	}
+	pub, err := c.GetRole(context.Background(), found.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pub.DocumentID != "doc-public" {
+		t.Fatalf("documentId=%q", pub.DocumentID)
+	}
+	if got := FlattenPermissions(pub.Permissions); !reflect.DeepEqual(got, []string{"api::article.article.find"}) {
+		t.Fatalf("GetRole permissions=%v", got)
 	}
 	pub.Permissions = ExpandPermissions([]string{"api::article.article.findOne"})
 	if err := c.UpdateRole(context.Background(), pub.ID, pub); err != nil {

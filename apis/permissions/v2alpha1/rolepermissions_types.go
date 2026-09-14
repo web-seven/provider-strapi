@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha1
+package v2alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,6 +46,9 @@ type RolePermissionsParameters struct {
 type RolePermissionsObservation struct {
 	// RoleID is the numeric identifier of the resolved role in Strapi.
 	RoleID int `json:"roleID,omitempty"`
+
+	// RoleDocumentID is the Strapi v5 document ID of the role.
+	RoleDocumentID string `json:"roleDocumentID,omitempty"`
 
 	// Type is the type field of the resolved role (e.g. "public").
 	Type string `json:"type,omitempty"`

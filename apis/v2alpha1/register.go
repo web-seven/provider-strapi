@@ -1,4 +1,4 @@
-package v1alpha1
+package v2alpha1
 
 import (
 	"reflect"
@@ -10,7 +10,7 @@ import (
 // Package type metadata.
 const (
 	Group   = "strapi.crossplane.io"
-	Version = "v1alpha1"
+	Version = "v2alpha1"
 )
 
 var (

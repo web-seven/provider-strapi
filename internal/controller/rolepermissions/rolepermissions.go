@@ -36,8 +36,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	permv1alpha1 "github.com/web-seven/provider-strapi/apis/permissions/v1alpha1"
-	apisv1alpha1 "github.com/web-seven/provider-strapi/apis/v1alpha1"
+	permv2alpha1 "github.com/web-seven/provider-strapi/apis/permissions/v2alpha1"
+	apisv2alpha1 "github.com/web-seven/provider-strapi/apis/v2alpha1"
 	strapiclient "github.com/web-seven/provider-strapi/internal/clients/strapi"
 )
 
@@ -49,6 +49,7 @@ const (
 	errParseCreds   = "cannot parse credentials"
 	errNewClient    = "cannot create Strapi client"
 	errListRoles    = "cannot list users-permissions roles"
+	errGetRole      = "cannot get users-permissions role"
 	errRoleNotFound = "role not found in Strapi"
 	errUpdateRole   = "cannot update role permissions"
 )
@@ -66,7 +67,7 @@ func SetupGated(mgr ctrl.Manager, o controller.Options) error {
 
 // Setup adds a controller that reconciles RolePermissions managed resources.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
-	name := managed.ControllerName(permv1alpha1.RolePermissionsGroupKind)
+	name := managed.ControllerName(permv2alpha1.RolePermissionsGroupKind)
 
 	// One cache per provider lifetime, keyed by (endpoint, credentials, TLS).
 	// Without this, every reconcile would build a fresh Client and trigger a
@@ -75,9 +76,9 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 	clientCache := strapiclient.NewCache()
 
 	opts := []managed.ReconcilerOption{
-		managed.WithTypedExternalConnector[*permv1alpha1.RolePermissions](&connector{
+		managed.WithTypedExternalConnector[*permv2alpha1.RolePermissions](&connector{
 			kube:  mgr.GetClient(),
-			usage: resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv1alpha1.ProviderConfigUsage{}),
+			usage: resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv2alpha1.ProviderConfigUsage{}),
 			newClientFn: func(cfg strapiclient.Config) (strapiClient, error) {
 				return clientCache.Get(cfg)
 			},
@@ -99,20 +100,20 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 	if o.MetricOptions != nil && o.MetricOptions.MRStateMetrics != nil {
 		stateMetricsRecorder := statemetrics.NewMRStateRecorder(
 			mgr.GetClient(), o.Logger, o.MetricOptions.MRStateMetrics,
-			&permv1alpha1.RolePermissionsList{}, o.MetricOptions.PollStateMetricInterval,
+			&permv2alpha1.RolePermissionsList{}, o.MetricOptions.PollStateMetricInterval,
 		)
 		if err := mgr.Add(stateMetricsRecorder); err != nil {
 			return errors.Wrap(err, "cannot register MR state metrics recorder")
 		}
 	}
 
-	r := managed.NewReconciler(mgr, resource.ManagedKind(permv1alpha1.RolePermissionsGroupVersionKind), opts...)
+	r := managed.NewReconciler(mgr, resource.ManagedKind(permv2alpha1.RolePermissionsGroupVersionKind), opts...)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
 		WithOptions(o.ForControllerRuntime()).
 		WithEventFilter(resource.DesiredStateChanged()).
-		For(&permv1alpha1.RolePermissions{}).
+		For(&permv2alpha1.RolePermissions{}).
 		Complete(ratelimiter.NewReconciler(name, r, o.GlobalRateLimiter))
 }
 
@@ -121,6 +122,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 // an HTTP server.
 type strapiClient interface {
 	ListRoles(ctx context.Context) ([]strapiclient.Role, error)
+	GetRole(ctx context.Context, id int) (strapiclient.Role, error)
 	UpdateRole(ctx context.Context, id int, role strapiclient.Role) error
 }
 
@@ -133,7 +135,7 @@ type connector struct {
 // providerConfigRef returns the name and kind of the ProviderConfig to use.
 // If the CR has no providerConfigRef, it defaults to the ClusterProviderConfig
 // named "default" (the Crossplane v2.2 platform default).
-func providerConfigRef(cr *permv1alpha1.RolePermissions) (name, kind string) {
+func providerConfigRef(cr *permv2alpha1.RolePermissions) (name, kind string) {
 	name, kind = "default", "ClusterProviderConfig"
 	ref := cr.GetProviderConfigReference()
 	if ref == nil {
@@ -148,7 +150,7 @@ func providerConfigRef(cr *permv1alpha1.RolePermissions) (name, kind string) {
 	return
 }
 
-func (c *connector) Connect(ctx context.Context, cr *permv1alpha1.RolePermissions) (managed.TypedExternalClient[*permv1alpha1.RolePermissions], error) {
+func (c *connector) Connect(ctx context.Context, cr *permv2alpha1.RolePermissions) (managed.TypedExternalClient[*permv2alpha1.RolePermissions], error) {
 	if err := c.usage.Track(ctx, cr); err != nil {
 		return nil, errors.Wrap(err, errTrackPCUsage)
 	}
@@ -156,20 +158,20 @@ func (c *connector) Connect(ctx context.Context, cr *permv1alpha1.RolePermission
 	var (
 		endpoint    string
 		insecure    bool
-		credsSelect apisv1alpha1.ProviderCredentials
+		credsSelect apisv2alpha1.ProviderCredentials
 	)
 
 	refName, refKind := providerConfigRef(cr)
 
 	switch refKind {
 	case "ProviderConfig":
-		pc := &apisv1alpha1.ProviderConfig{}
+		pc := &apisv2alpha1.ProviderConfig{}
 		if err := c.kube.Get(ctx, types.NamespacedName{Name: refName, Namespace: cr.GetNamespace()}, pc); err != nil {
 			return nil, errors.Wrap(err, errGetPC)
 		}
 		endpoint, insecure, credsSelect = pc.Spec.Endpoint, pc.Spec.InsecureSkipTLSVerify, pc.Spec.Credentials
 	case "ClusterProviderConfig":
-		cpc := &apisv1alpha1.ClusterProviderConfig{}
+		cpc := &apisv2alpha1.ClusterProviderConfig{}
 		if err := c.kube.Get(ctx, types.NamespacedName{Name: refName}, cpc); err != nil {
 			return nil, errors.Wrap(err, errGetCPC)
 		}
@@ -202,7 +204,7 @@ type external struct {
 	client strapiClient
 }
 
-func (e *external) Observe(ctx context.Context, cr *permv1alpha1.RolePermissions) (managed.ExternalObservation, error) {
+func (e *external) Observe(ctx context.Context, cr *permv2alpha1.RolePermissions) (managed.ExternalObservation, error) {
 	role, err := e.resolveRole(ctx, cr)
 	if err != nil {
 		return managed.ExternalObservation{}, err
@@ -224,10 +226,11 @@ func (e *external) Observe(ctx context.Context, cr *permv1alpha1.RolePermissions
 	desired := append([]string(nil), cr.Spec.ForProvider.Permissions...)
 	sort.Strings(desired)
 
-	cr.Status.AtProvider = permv1alpha1.RolePermissionsObservation{
-		RoleID:      role.ID,
-		Type:        role.Type,
-		Permissions: current,
+	cr.Status.AtProvider = permv2alpha1.RolePermissionsObservation{
+		RoleID:         role.ID,
+		RoleDocumentID: role.DocumentID,
+		Type:           role.Type,
+		Permissions:    current,
 	}
 	cr.Status.SetConditions(xpv1.Available())
 
@@ -237,7 +240,7 @@ func (e *external) Observe(ctx context.Context, cr *permv1alpha1.RolePermissions
 	}, nil
 }
 
-func (e *external) Create(ctx context.Context, cr *permv1alpha1.RolePermissions) (managed.ExternalCreation, error) {
+func (e *external) Create(ctx context.Context, cr *permv2alpha1.RolePermissions) (managed.ExternalCreation, error) {
 	// The role itself already exists in Strapi (we never create roles in
 	// this MR). "Create" here means "first-time set the permissions" — the
 	// same operation as Update.
@@ -248,14 +251,14 @@ func (e *external) Create(ctx context.Context, cr *permv1alpha1.RolePermissions)
 	return managed.ExternalCreation{}, nil
 }
 
-func (e *external) Update(ctx context.Context, cr *permv1alpha1.RolePermissions) (managed.ExternalUpdate, error) {
+func (e *external) Update(ctx context.Context, cr *permv2alpha1.RolePermissions) (managed.ExternalUpdate, error) {
 	if err := e.applyPermissions(ctx, cr); err != nil {
 		return managed.ExternalUpdate{}, err
 	}
 	return managed.ExternalUpdate{}, nil
 }
 
-func (e *external) Delete(ctx context.Context, cr *permv1alpha1.RolePermissions) (managed.ExternalDelete, error) {
+func (e *external) Delete(ctx context.Context, cr *permv2alpha1.RolePermissions) (managed.ExternalDelete, error) {
 	// We do NOT delete the role itself — this MR manages permissions only,
 	// not role lifecycle, and built-in roles can't be deleted anyway.
 	// "Delete" means: clear the managed permissions on the role.
@@ -282,17 +285,32 @@ func (e *external) Delete(ctx context.Context, cr *permv1alpha1.RolePermissions)
 
 func (e *external) Disconnect(_ context.Context) error { return nil }
 
-// resolveRole locates the target role: it prefers the cached external-name
-// annotation (numeric role ID) for stability, falling back to selector
-// resolution by type or name. A non-numeric external-name (which is what
-// crossplane-runtime's default NameAsExternalName initializer writes — the
-// CR's metadata.name — on first reconcile, before our Observe overwrites
-// it) is treated as "not set" rather than an error.
-func (e *external) resolveRole(ctx context.Context, cr *permv1alpha1.RolePermissions) (strapiclient.Role, error) {
+// resolveRole locates the target role and fetches it with its permission
+// tree. Strapi v5 omits permissions from the role listing, so the listing is
+// only used to find the role ID.
+func (e *external) resolveRole(ctx context.Context, cr *permv2alpha1.RolePermissions) (strapiclient.Role, error) {
 	roles, err := e.client.ListRoles(ctx)
 	if err != nil {
 		return strapiclient.Role{}, errors.Wrap(err, errListRoles)
 	}
+	found, err := findRole(roles, cr)
+	if err != nil {
+		return strapiclient.Role{}, err
+	}
+	role, err := e.client.GetRole(ctx, found.ID)
+	if err != nil {
+		return strapiclient.Role{}, errors.Wrap(err, errGetRole)
+	}
+	return role, nil
+}
+
+// findRole picks the target role from the listing: it prefers the cached
+// external-name annotation (numeric role ID) for stability, falling back to
+// selector resolution by type or name. A non-numeric external-name (which is
+// what crossplane-runtime's default NameAsExternalName initializer writes —
+// the CR's metadata.name — on first reconcile, before our Observe overwrites
+// it) is treated as "not set" rather than an error.
+func findRole(roles []strapiclient.Role, cr *permv2alpha1.RolePermissions) (strapiclient.Role, error) {
 
 	if extName := meta.GetExternalName(cr); extName != "" {
 		if id, err := strconv.Atoi(extName); err == nil {
@@ -317,7 +335,7 @@ func (e *external) resolveRole(ctx context.Context, cr *permv1alpha1.RolePermiss
 	return role, nil
 }
 
-func (e *external) applyPermissions(ctx context.Context, cr *permv1alpha1.RolePermissions) error {
+func (e *external) applyPermissions(ctx context.Context, cr *permv2alpha1.RolePermissions) error {
 	role, err := e.resolveRole(ctx, cr)
 	if err != nil {
 		return err

@@ -17,7 +17,9 @@ limitations under the License.
 // Package strapi is an HTTP client for Strapi's admin API. Managed-resource
 // controllers obtain an authenticated *Client via New, then call Do/DoJSON
 // for /admin/* operations. The client exchanges admin email+password for a
-// JWT lazily, caches it, and re-logs in once on a 401 response.
+// JWT lazily, caches it, and re-logs in once on a 401 response. Strapi v5
+// admin access tokens are short-lived (30 minutes by default), so this
+// re-login path runs routinely rather than only on rare expiry.
 package strapi
 
 import (

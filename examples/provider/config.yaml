@@ -7,7 +7,7 @@
 # `secretRef` to a Secret you control. The Secret value at `key: credentials`
 # must be a JSON object {"email":"...","password":"..."} that the provider
 # exchanges for an admin JWT via POST /admin/login on first use.
-apiVersion: strapi.crossplane.io/v1alpha1
+apiVersion: strapi.crossplane.io/v2alpha1
 kind: ProviderConfig
 metadata:
   name: example
@@ -21,7 +21,7 @@ spec:
       name: strapi-admin
       key: credentials
 ---
-apiVersion: strapi.crossplane.io/v1alpha1
+apiVersion: strapi.crossplane.io/v2alpha1
 kind: ClusterProviderConfig
 metadata:
   name: example

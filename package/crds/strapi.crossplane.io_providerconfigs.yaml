@@ -29,7 +29,7 @@ spec:
     - jsonPath: .spec.endpoint
       name: ENDPOINT
       type: string
-    name: v1alpha1
+    name: v2alpha1
     schema:
       openAPIV3Schema:
         description: |-

@@ -1,12 +1,12 @@
 # Crossplane Strapi Provider
 
-Manage [Strapi v4](https://strapi.io) resources declaratively from Kubernetes via [Crossplane](https://crossplane.io).
+Manage [Strapi v5](https://strapi.io) resources declaratively from Kubernetes via [Crossplane](https://crossplane.io).
 
 ## Features
 
 - **Declarative Strapi management** — control Strapi instances from
   Kubernetes manifests, reconciled continuously by Crossplane.
-- **Admin API auth** — point the provider at any reachable Strapi v4
+- **Admin API auth** — point the provider at any reachable Strapi v5
   endpoint with admin credentials (email + password) supplied via a
   Kubernetes `Secret`. `insecureSkipTLSVerify` is available for
   self-signed certificates.
@@ -20,7 +20,7 @@ Manage [Strapi v4](https://strapi.io) resources declaratively from Kubernetes vi
 
 The provider currently ships:
 
-- `RolePermissions` (`permissions.strapi.crossplane.io/v1alpha1`) — manage
+- `RolePermissions` (`permissions.strapi.crossplane.io/v2alpha1`) — manage
   the permission set on a users-permissions role.
 
 Additional managed resources are planned.
@@ -45,7 +45,7 @@ spec:
 ## Prerequisites
 
 - A Kubernetes cluster with Crossplane installed.
-- A reachable Strapi v4 instance with an admin account whose credentials
+- A reachable Strapi v5 instance with an admin account whose credentials
   the provider can use to call the admin API.
 
 ## Configure
@@ -71,7 +71,7 @@ stringData:
 ### ClusterProviderConfig
 
 ```yaml
-apiVersion: strapi.crossplane.io/v1alpha1
+apiVersion: strapi.crossplane.io/v2alpha1
 kind: ClusterProviderConfig
 metadata:
   name: default
@@ -95,14 +95,14 @@ The example uses `RolePermissions` (the resource shipped today); other
 Strapi resources will follow the same pattern.
 
 ```yaml
-apiVersion: permissions.strapi.crossplane.io/v1alpha1
+apiVersion: permissions.strapi.crossplane.io/v2alpha1
 kind: RolePermissions
 metadata:
   name: public-read
   namespace: default
 spec:
   forProvider:
-    roleType: public            # or "authenticated", or use roleName: <custom>
+    role: public                # "public", "authenticated", or a custom role name
     permissions:
       - api::article.article.find
       - api::article.article.findOne
