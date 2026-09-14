@@ -110,7 +110,7 @@ func (f *fakeTransferServer) serve(conn *websocket.Conn) {
 // the first one, and waits for each frame to be acknowledged.
 func (f *fakeTransferServer) flush(conn *websocket.Conn, startUUID, step string) bool {
 	id := "flush-" + step
-	var frames []map[string]any
+	frames := make([]map[string]any, 0, len(f.stages[step])+1)
 	for _, batch := range f.stages[step] {
 		frames = append(frames, map[string]any{"type": "transfer", "data": batch, "ended": false, "error": nil, "id": id})
 	}

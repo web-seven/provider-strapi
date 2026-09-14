@@ -338,8 +338,20 @@ func (s *pullSession) dispatch(ctx context.Context, payload wireEnvelope) (wireE
 		return wireEnvelope{}, errors.Wrap(err, "send transfer message")
 	}
 
+	// A frame matching id may already be sitting in pending from a previous
+	// call. Check without disturbing the order of the rest.
+	for i, env := range s.pending {
+		if env.UUID == id {
+			s.pending = append(s.pending[:i:i], s.pending[i+1:]...)
+			return env, nil
+		}
+	}
+
+	// Otherwise read fresh frames directly off the socket — never through
+	// nextFrame, which would just hand back the frames we're about to stash
+	// in pending below, looping forever without making progress.
 	for {
-		env, err := s.nextFrame(ctx)
+		env, err := s.readFrame(ctx)
 		if err != nil {
 			return wireEnvelope{}, err
 		}
