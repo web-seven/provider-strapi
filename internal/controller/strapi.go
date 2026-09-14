@@ -20,6 +20,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/web-seven/provider-strapi/internal/controller/backups"
 	"github.com/web-seven/provider-strapi/internal/controller/config"
 	"github.com/web-seven/provider-strapi/internal/controller/rolepermissions"
 )
@@ -30,6 +31,7 @@ func SetupGated(mgr ctrl.Manager, o controller.Options) error {
 	for _, setup := range []func(ctrl.Manager, controller.Options) error{
 		config.Setup,
 		rolepermissions.SetupGated,
+		backups.SetupGated,
 	} {
 		if err := setup(mgr, o); err != nil {
 			return err

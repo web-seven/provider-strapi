@@ -1,0 +1,86 @@
+# Backup dumps a Strapi project's entities, relations and configuration to
+# an S3-compatible bucket on a cron schedule, using Strapi's remote
+# data-transfer "pull" endpoint.
+#
+# Prerequisites:
+#   - A transfer token scoped to "pull" (Strapi admin: Settings > Transfer
+#     Tokens), stored in a Secret.
+#   - A destination bucket that already exists; this resource does not
+#     manage bucket lifecycle.
+#
+# The archive written to the bucket is a bespoke format (gzip-compressed
+# JSON-lines per stage, plus raw asset files) — it is not the same as, and
+# is not consumable by, the `strapi import` CLI command.
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: strapi-transfer-token
+  namespace: default
+stringData:
+  token: <transfer token from Strapi Settings > Transfer Tokens>
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backup-bucket-credentials
+  namespace: default
+stringData:
+  credentials.json: |
+    {
+      "accessKeyId": "<access key id>",
+      "secretAccessKey": "<secret access key>"
+    }
+---
+apiVersion: backups.strapi.crossplane.io/v2alpha1
+kind: Backup
+metadata:
+  name: production
+  namespace: default
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: example
+  forProvider:
+    schedule: "0 2 * * *" # daily at 02:00 UTC
+    retentionDays: 30
+    transferTokenSecretRef:
+      name: strapi-transfer-token
+      namespace: default
+      key: token
+    destination:
+      bucket: strapi-backups
+      path: production
+      region: us-east-1
+      credentials:
+        source: Secret
+        secretRef:
+          name: backup-bucket-credentials
+          namespace: default
+          key: credentials.json
+---
+# MinIO / R2 / GCS (S3-compatible XML API) example: set endpoint and
+# forcePathStyle. GCS needs HMAC keys for its access/secret pair.
+apiVersion: backups.strapi.crossplane.io/v2alpha1
+kind: Backup
+metadata:
+  name: staging
+  namespace: default
+spec:
+  forProvider:
+    schedule: "0 */6 * * *" # every 6 hours
+    transferTokenSecretRef:
+      name: strapi-transfer-token
+      namespace: default
+      key: token
+    destination:
+      bucket: strapi-backups
+      path: staging
+      endpoint: https://minio.example.com
+      forcePathStyle: true
+      credentials:
+        source: Secret
+        secretRef:
+          name: backup-bucket-credentials
+          namespace: default
+          key: credentials.json

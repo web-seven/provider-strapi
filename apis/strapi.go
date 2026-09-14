@@ -20,6 +20,7 @@ package apis
 import (
 	"k8s.io/apimachinery/pkg/runtime"
 
+	backupsv2alpha1 "github.com/web-seven/provider-strapi/apis/backups/v2alpha1"
 	permissionsv2alpha1 "github.com/web-seven/provider-strapi/apis/permissions/v2alpha1"
 	strapiv2alpha1 "github.com/web-seven/provider-strapi/apis/v2alpha1"
 )
@@ -29,6 +30,7 @@ func init() {
 	AddToSchemes = append(AddToSchemes,
 		strapiv2alpha1.SchemeBuilder.AddToScheme,
 		permissionsv2alpha1.SchemeBuilder.AddToScheme,
+		backupsv2alpha1.SchemeBuilder.AddToScheme,
 	)
 }
 
