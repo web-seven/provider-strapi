@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Crossplane provider for Strapi v4. Module path `github.com/web-seven/provider-strapi`. Currently ships:
+Crossplane provider for Strapi v5. Module path `github.com/web-seven/provider-strapi`. Currently ships:
 
-- `strapi.crossplane.io/v1alpha1` — `ProviderConfig` (namespaced) and `ClusterProviderConfig` (cluster-scoped). Spec: `endpoint`, `credentials` (Secret with JSON `{"email","password"}`), optional `insecureSkipTLSVerify`.
-- `permissions.strapi.crossplane.io/v1alpha1` — `RolePermissions`. Manages a users-permissions role's permission set against an existing role (built-in `Public`/`Authenticated` resolved by `type`, custom roles by name). Strapi's `PUT` is full-replace, so the spec's `permissions` list is authoritative.
-- `internal/clients/strapi/` — HTTP client. `Client.Do/DoJSON` attaches the admin JWT, drops the cache on 401, re-logs in once. `roles.go` adds `ListRoles`, `UpdateRole`, `FindRole`, plus `FlattenPermissions`/`ExpandPermissions` between Strapi's nested tree and the flat user-facing form.
+- `strapi.crossplane.io/v2alpha1` — `ProviderConfig` (namespaced) and `ClusterProviderConfig` (cluster-scoped). Spec: `endpoint`, `credentials` (Secret with JSON `{"email","password"}`), optional `insecureSkipTLSVerify`.
+- `permissions.strapi.crossplane.io/v2alpha1` — `RolePermissions`. Manages a users-permissions role's permission set against an existing role (built-in `Public`/`Authenticated` resolved by `type`, custom roles by name). Strapi's `PUT` is full-replace, so the spec's `permissions` list is authoritative.
+- `internal/clients/strapi/` — HTTP client. `Client.Do/DoJSON` attaches the admin JWT, drops the cache on 401, re-logs in once. `roles.go` adds `ListRoles`, `GetRole`, `UpdateRole`, `FindRole`, plus `FlattenPermissions`/`ExpandPermissions` between Strapi's nested tree and the flat user-facing form.
 
 ## Common commands
 
@@ -34,7 +34,7 @@ go test ./internal/controller/<pkg> -run TestName -v
 Add a new managed-resource type via the still-active scaffolder:
 
 ```sh
-make provider.addtype provider=Strapi group=<lower> kind=<CamelKind> [apiversion=v1alpha1]
+make provider.addtype provider=Strapi group=<lower> kind=<CamelKind> [apiversion=v2alpha1]
 ```
 
 After running:
@@ -53,8 +53,8 @@ Builds a `controller-runtime` Manager, wires feature gates (`EnableBetaManagemen
 **2. APIs — `apis/`**
 Two-tier layout:
 
-- `apis/v1alpha1/` — provider-level types. `ProviderConfig` (namespaced) and `ClusterProviderConfig` (cluster-scoped) plus their `*Usage` companions. `ProviderConfigSpec` is shared between the two. Credentials use `xpv1.CommonCredentialSelectors` (Source: `None|Secret|InjectedIdentity|Environment|Filesystem`); the secret payload is JSON parsed by `internal/clients/strapi.ParseCredentials`.
-- `apis/<group>/v1alpha1/` — managed-resource types. Currently `apis/permissions/v1alpha1/` (`RolePermissions`). Add new groups via `make provider.addtype`. Each `<Kind>Spec` embeds `xpv2.ManagedResourceSpec` + a `ForProvider` parameters struct; `<Kind>Status` embeds `xpv1.ResourceStatus` + an `AtProvider` observation struct.
+- `apis/v2alpha1/` — provider-level types. `ProviderConfig` (namespaced) and `ClusterProviderConfig` (cluster-scoped) plus their `*Usage` companions. `ProviderConfigSpec` is shared between the two. Credentials use `xpv1.CommonCredentialSelectors` (Source: `None|Secret|InjectedIdentity|Environment|Filesystem`); the secret payload is JSON parsed by `internal/clients/strapi.ParseCredentials`.
+- `apis/<group>/v2alpha1/` — managed-resource types. Currently `apis/permissions/v2alpha1/` (`RolePermissions`). Add new groups via `make provider.addtype`. Each `<Kind>Spec` embeds `xpv2.ManagedResourceSpec` + a `ForProvider` parameters struct; `<Kind>Status` embeds `xpv1.ResourceStatus` + an `AtProvider` observation struct.
 - `apis/strapi.go` is the aggregating `SchemeBuilder` — every API group must be added to its `AddToSchemes`.
 
 **3. Controllers — `internal/controller/`**
@@ -64,13 +64,13 @@ Two-tier layout:
 - `rolepermissions/rolepermissions.go` — managed-resource controller for `RolePermissions`. Per-MR-kind shape:
   - `SetupGated` registers `Setup` with `o.Gate` keyed by GVK so it only starts after the CRD is present (safe-start).
   - `connector.Connect` resolves credentials by switching on `cr.GetProviderConfigReference().Kind`. `"ProviderConfig"` is namespaced (must use `cr.GetNamespace()` in the `kube.Get`); `"ClusterProviderConfig"` is cluster-scoped. Tracks usage via `resource.NewProviderConfigUsageTracker`, extracts creds via `resource.CommonCredentialExtractor`, parses JSON with `strapiclient.ParseCredentials`, builds a `*strapiclient.Client`.
-  - `external` implements `managed.TypedExternalClient` against a small `strapiClient` interface (so tests substitute a fake without httptest). `Observe` resolves the role by external-name (numeric ID) or selector, computes drift via `FlattenPermissions`. `Create`/`Update` `PUT` the role with `ExpandPermissions(spec)`. `Delete` is a no-op (built-in roles can't be removed; we don't manage role lifecycle).
+  - `external` implements `managed.TypedExternalClient` against a small `strapiClient` interface (so tests substitute a fake without httptest). `Observe` resolves the role by external-name (numeric ID) or selector from `ListRoles`, then fetches it with `GetRole` (Strapi v5 omits permissions from the listing), computes drift via `FlattenPermissions`. `Create`/`Update` `PUT` the role with `ExpandPermissions(spec)`. `Delete` is a no-op (built-in roles can't be removed; we don't manage role lifecycle).
   - `WithEventFilter(resource.DesiredStateChanged())` on the controller builder so spec-only changes drive reconciliation.
 
 **Strapi client (`internal/clients/strapi/`)**
 - `strapi.go`: `Client` with mutex-cached JWT, lazy login on first request, `Do`/`DoJSON` helpers. On 401 the JWT cache is invalidated and the request retried once (handles 30-day default JWT expiry).
 - `roles.go`: users-permissions role types (`Role`, nested `PermissionsByResource`/`ResourcePermissions`/`Action`), CRUD helpers, `FindRole` selector, and the flat-vs-nested permission-format converters.
-- Permission action format follows Strapi v4 storage: `api::<api>.<contentType>.<action>` (controller implicit, equals contentType) and `plugin::<plugin>.<controller>.<action>` (controller explicit). The flat string IS what the user writes; the nested tree is internal.
+- Permission action format follows Strapi v5 storage: `api::<api>.<contentType>.<action>` (controller implicit, equals contentType) and `plugin::<plugin>.<controller>.<action>` (controller explicit). The flat string IS what the user writes; the nested tree is internal.
 
 **Resource scope.** `ProviderConfig` is namespace-scoped; `ClusterProviderConfig` is cluster-scoped. `RolePermissions` is namespace-scoped. New managed resources should generally be namespace-scoped; their connector must use `cr.GetNamespace()` when resolving a namespaced `ProviderConfig`.
 

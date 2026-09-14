@@ -18,13 +18,14 @@ package rolepermissions
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	permv1alpha1 "github.com/web-seven/provider-strapi/apis/permissions/v1alpha1"
+	permv2alpha1 "github.com/web-seven/provider-strapi/apis/permissions/v2alpha1"
 	strapiclient "github.com/web-seven/provider-strapi/internal/clients/strapi"
 )
 
@@ -37,9 +38,24 @@ type fakeClient struct {
 	updateCals int
 }
 
+// ListRoles mirrors Strapi v5, which omits permission trees from the listing.
 func (f *fakeClient) ListRoles(_ context.Context) ([]strapiclient.Role, error) {
 	f.listCalls++
-	return f.roles, f.listErr
+	out := make([]strapiclient.Role, 0, len(f.roles))
+	for _, r := range f.roles {
+		r.Permissions = nil
+		out = append(out, r)
+	}
+	return out, f.listErr
+}
+
+func (f *fakeClient) GetRole(_ context.Context, id int) (strapiclient.Role, error) {
+	for _, r := range f.roles {
+		if r.ID == id {
+			return r, nil
+		}
+	}
+	return strapiclient.Role{}, errors.New("not found")
 }
 
 func (f *fakeClient) UpdateRole(_ context.Context, id int, role strapiclient.Role) error {
@@ -60,14 +76,14 @@ func (f *fakeClient) UpdateRole(_ context.Context, id int, role strapiclient.Rol
 	return nil
 }
 
-func newCR(role string, perms []string) *permv1alpha1.RolePermissions {
-	return &permv1alpha1.RolePermissions{
+func newCR(role string, perms []string) *permv2alpha1.RolePermissions {
+	return &permv2alpha1.RolePermissions{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test",
 			Namespace: "default",
 		},
-		Spec: permv1alpha1.RolePermissionsSpec{
-			ForProvider: permv1alpha1.RolePermissionsParameters{
+		Spec: permv2alpha1.RolePermissionsSpec{
+			ForProvider: permv2alpha1.RolePermissionsParameters{
 				Role:        role,
 				Permissions: perms,
 			},
@@ -77,9 +93,9 @@ func newCR(role string, perms []string) *permv1alpha1.RolePermissions {
 
 func builtInRoles() []strapiclient.Role {
 	return []strapiclient.Role{
-		{ID: 1, Name: "Authenticated", Type: "authenticated"},
+		{ID: 1, DocumentID: "doc-auth", Name: "Authenticated", Type: "authenticated"},
 		{
-			ID: 2, Name: "Public", Type: "public",
+			ID: 2, DocumentID: "doc-public", Name: "Public", Type: "public",
 			Permissions: strapiclient.ExpandPermissions([]string{
 				"api::article.article.find",
 			}),
@@ -109,7 +125,7 @@ func TestObserve_DriftDetected(t *testing.T) {
 	if got := meta.GetExternalName(cr); got != "2" {
 		t.Fatalf("external-name=%q, want 2", got)
 	}
-	if cr.Status.AtProvider.RoleID != 2 || cr.Status.AtProvider.Type != "public" {
+	if cr.Status.AtProvider.RoleID != 2 || cr.Status.AtProvider.RoleDocumentID != "doc-public" || cr.Status.AtProvider.Type != "public" {
 		t.Fatalf("status not populated: %+v", cr.Status.AtProvider)
 	}
 }

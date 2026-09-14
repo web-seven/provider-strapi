@@ -31,7 +31,7 @@ spec:
     - jsonPath: .resourceRef.name
       name: RESOURCE-NAME
       type: string
-    name: v1alpha1
+    name: v2alpha1
     schema:
       openAPIV3Schema:
         description: A ClusterProviderConfigUsage indicates that a resource is using

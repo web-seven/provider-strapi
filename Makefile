@@ -206,7 +206,7 @@ export GOMPLATE
 #   provider: Camel case name of your provider, e.g. GitHub, PlanetScale
 #   group: API group for the type you want to add.
 #   kind: Kind of the type you want to add
-#	apiversion: API version of the type you want to add. Optional and defaults to "v1alpha1"
+#	apiversion: API version of the type you want to add. Optional and defaults to "v2alpha1"
 provider.addtype: $(GOMPLATE)
 	@[ "${provider}" ] || ( echo "argument \"provider\" is not set"; exit 1 )
 	@[ "${group}" ] || ( echo "argument \"group\" is not set"; exit 1 )

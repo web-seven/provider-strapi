@@ -26,7 +26,11 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Role is a users-permissions role as returned by Strapi v4.
+// Role is a users-permissions role as returned by Strapi v5.
+//
+// ListRoles returns roles without their permission tree; use GetRole to
+// fetch Permissions. Role mutations are still addressed by the numeric ID,
+// DocumentID is informational.
 //
 // The Permissions field uses Strapi's nested controller/action shape:
 //
@@ -44,6 +48,7 @@ import (
 // list of "source.controller.action" strings.
 type Role struct {
 	ID          int                   `json:"id"`
+	DocumentID  string                `json:"documentId,omitempty"`
 	Name        string                `json:"name"`
 	Description string                `json:"description,omitempty"`
 	Type        string                `json:"type,omitempty"`
@@ -65,8 +70,8 @@ type Action struct {
 	Policy  string `json:"policy"`
 }
 
-// ListRoles fetches all users-permissions roles, including their permission
-// trees.
+// ListRoles fetches all users-permissions roles. Strapi v5 omits the
+// permission tree from this listing.
 func (c *Client) ListRoles(ctx context.Context) ([]Role, error) {
 	var out struct {
 		Roles []Role `json:"roles"`

@@ -14,12 +14,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package v1alpha1 contains the v1alpha1 group permissions resources of the
+// Package v2alpha1 contains the v2alpha1 group permissions resources of the
 // Strapi provider. Resources in this group manage Strapi's users-permissions
 // plugin entities — which API actions each role (Public, Authenticated,
 // custom) is allowed to invoke.
 //
 // +kubebuilder:object:generate=true
 // +groupName=permissions.strapi.crossplane.io
-// +versionName=v1alpha1
-package v1alpha1
+// +versionName=v2alpha1
+package v2alpha1

@@ -18,7 +18,7 @@
 # See: https://github.com/crossplane/terrajet/blob/main/docs/generating-a-provider.md
 set -euo pipefail
 
-APIVERSION="${APIVERSION:-v1alpha1}"
+APIVERSION="${APIVERSION:-v2alpha1}"
 echo "Adding type ${KIND} to group ${GROUP} with version ${APIVERSION}"
 
 export GROUP

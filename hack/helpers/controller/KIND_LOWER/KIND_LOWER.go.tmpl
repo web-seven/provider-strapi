@@ -35,7 +35,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/statemetrics"
 
 	{{ .Env.APIVERSION | strings.ToLower }} "{{ .Env.PROJECT_REPO | strings.ToLower }}/apis/{{ .Env.GROUP | strings.ToLower }}/{{ .Env.APIVERSION | strings.ToLower }}"
-	apisv1alpha1 "{{ .Env.PROJECT_REPO | strings.ToLower }}/apis/v1alpha1"
+	apisv2alpha1 "{{ .Env.PROJECT_REPO | strings.ToLower }}/apis/v2alpha1"
 )
 
 const (
@@ -60,17 +60,17 @@ func SetupGated(mgr ctrl.Manager, o controller.Options) error {
 		if err := Setup(mgr, o); err != nil {
 			panic(errors.Wrap(err, "cannot setup {{ .Env.KIND }} controller"))
 		}
-	}, v1alpha1.{{ .Env.KIND }}GroupVersionKind)
+	}, v2alpha1.{{ .Env.KIND }}GroupVersionKind)
 	return nil
 }
 
 func Setup(mgr ctrl.Manager, o controller.Options) error {
-	name := managed.ControllerName(v1alpha1.{{ .Env.KIND }}GroupKind)
+	name := managed.ControllerName(v2alpha1.{{ .Env.KIND }}GroupKind)
 
 	opts := []managed.ReconcilerOption{
 		managed.WithTypedExternalConnector[*{{ .Env.APIVERSION | strings.ToLower }}.{{ .Env.KIND }}](&connector{
 			kube:         mgr.GetClient(),
-			usage:        resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv1alpha1.ProviderConfigUsage{}),
+			usage:        resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv2alpha1.ProviderConfigUsage{}),
 			newServiceFn: newNoOpService}),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
 		managed.WithPollInterval(o.PollInterval),
@@ -91,20 +91,20 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 
 	if o.MetricOptions != nil && o.MetricOptions.MRStateMetrics != nil {
 		stateMetricsRecorder := statemetrics.NewMRStateRecorder(
-			mgr.GetClient(), o.Logger, o.MetricOptions.MRStateMetrics, &v1alpha1.{{ .Env.KIND }}List{}, o.MetricOptions.PollStateMetricInterval,
+			mgr.GetClient(), o.Logger, o.MetricOptions.MRStateMetrics, &v2alpha1.{{ .Env.KIND }}List{}, o.MetricOptions.PollStateMetricInterval,
 		)
 		if err := mgr.Add(stateMetricsRecorder); err != nil {
-			return errors.Wrap(err, "cannot register MR state metrics recorder for kind v1alpha1.{{ .Env.KIND }}List")
+			return errors.Wrap(err, "cannot register MR state metrics recorder for kind v2alpha1.{{ .Env.KIND }}List")
 		}
 	}
 
-	r := managed.NewReconciler(mgr, resource.ManagedKind(v1alpha1.{{ .Env.KIND }}GroupVersionKind), opts...)
+	r := managed.NewReconciler(mgr, resource.ManagedKind(v2alpha1.{{ .Env.KIND }}GroupVersionKind), opts...)
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
 		WithOptions(o.ForControllerRuntime()).
 		WithEventFilter(resource.DesiredStateChanged()).
-		For(&v1alpha1.{{ .Env.KIND }}{}).
+		For(&v2alpha1.{{ .Env.KIND }}{}).
 		Complete(ratelimiter.NewReconciler(name, r, o.GlobalRateLimiter))
 }
 
@@ -126,19 +126,19 @@ func (c *connector) Connect(ctx context.Context, cr *{{ .Env.APIVERSION | string
 		return nil, errors.Wrap(err, errTrackPCUsage)
 	}
 
-	var cd apisv1alpha1.ProviderCredentials
+	var cd apisv2alpha1.ProviderCredentials
 
 	ref := cr.GetProviderConfigReference()
 
 	switch ref.Kind {
 	case "ProviderConfig":
-		pc := &apisv1alpha1.ProviderConfig{}
+		pc := &apisv2alpha1.ProviderConfig{}
 		if err := c.kube.Get(ctx, types.NamespacedName{Name: ref.Name, Namespace: cr.GetNamespace()}, pc); err != nil {
 			return nil, errors.Wrap(err, errGetPC)
 		}
 		cd = pc.Spec.Credentials
 	case "ClusterProviderConfig":
-		cpc := &apisv1alpha1.ClusterProviderConfig{}
+		cpc := &apisv2alpha1.ClusterProviderConfig{}
 		if err := c.kube.Get(ctx, types.NamespacedName{Name: ref.Name}, cpc); err != nil {
 			return nil, errors.Wrap(err, errGetCPC)
 		}

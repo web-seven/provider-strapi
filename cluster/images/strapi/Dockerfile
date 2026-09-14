@@ -1,4 +1,4 @@
-# Builds a self-contained Strapi v4 dev/test image. The Strapi project itself
+# Builds a self-contained Strapi v5 dev/test image. The Strapi project itself
 # is bootstrapped at build time via `create-strapi-app`, so the resulting
 # image has the full app + admin panel build baked in — no scaffolding step
 # at container start, just `npm start` after seeding the admin user.
@@ -7,8 +7,8 @@
 # `make serve` dev loop and `cluster/charts/strapi` Helm chart, NOT for
 # production. Production-quality Strapi lives in the digando chart.
 
-ARG NODE_VERSION=18-alpine
-ARG STRAPI_VERSION=4.20.3
+ARG NODE_VERSION=22-alpine
+ARG STRAPI_VERSION=5.53.0
 
 FROM node:${NODE_VERSION} AS bootstrap
 # ARGs declared before the first FROM are only available to FROM lines —
@@ -17,10 +17,13 @@ ARG STRAPI_VERSION
 WORKDIR /opt/strapi
 # Native build deps for sharp / sqlite3 / etc.
 RUN apk add --no-cache build-base gcompat python3 git
-# Generate a complete Strapi v4 project. --quickstart picks sqlite and runs
-# non-interactively; --no-run skips the auto-start (we only want the
-# artifacts). Then build the admin panel so the runtime image is self-contained.
-RUN npx --yes create-strapi-app@${STRAPI_VERSION} . --quickstart --no-run \
+# Generate a complete Strapi v5 project non-interactively with sqlite, no
+# Strapi Cloud login and no example content; --no-run skips the auto-start
+# (we only want the artifacts). Then build the admin panel so the runtime
+# image is self-contained.
+RUN npx --yes create-strapi-app@${STRAPI_VERSION} . \
+      --non-interactive --skip-cloud --no-run --js --use-npm \
+      --no-example --no-git-init --dbclient sqlite --dbfile .tmp/data.db --install \
  && npm run build
 
 FROM node:${NODE_VERSION}
