@@ -142,19 +142,6 @@ jobs:
           VERSION: ${{ needs.publish-package.outputs.version }}
         run: |
           set -euo pipefail
-          {
-            echo '## Install'
-            echo
-            echo '```yaml'
-            echo 'apiVersion: pkg.crossplane.io/v1'
-            echo 'kind: Provider'
-            echo 'metadata:'
-            echo "  name: ${XPKG_NAME}"
-            echo 'spec:'
-            echo "  package: ${XPKG_REGISTRY}/${XPKG_NAME}:${VERSION}"
-            echo '```'
-          } > notes.md
-
           if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             # Re-run of the workflow: refresh the assets of the existing release.
             gh release upload "$VERSION" _release/* --repo "$GITHUB_REPOSITORY" --clobber
@@ -167,6 +154,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "$VERSION" \
-            --notes-file notes.md \
             --generate-notes \
             "${prerelease[@]}"
