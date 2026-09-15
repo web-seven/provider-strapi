@@ -4,12 +4,15 @@ on:
   push:
     tags:
       - 'v*'
-      # v2.x.x tags are published to ghcr.io by release-v2.yml.
-      - '!v2.*'
 
 env:
   GO_VERSION: '1.23'
   DOCKER_BUILDX_VERSION: 'v0.23.0'
+
+  # Major versions whose releases are also published to the marketplace,
+  # e.g. '["v0", "v2"]'. Every release is published to ghcr.io.
+  MARKETPLACE_MAJOR_VERSIONS: '["v0"]'
+  GHCR_REGISTRY: ghcr.io/web-seven
 
   # Copy secrets to env so we can test for their presence without
   # 'secrets.XXX != ""' (which is not allowed in 'if' expressions).
@@ -18,9 +21,13 @@ env:
 jobs:
   publish-release:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
+      marketplace: ${{ steps.version.outputs.marketplace }}
 
     steps:
       - name: Setup QEMU
@@ -82,6 +89,11 @@ jobs:
           TAG=${GITHUB_REF##*/}
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "version=${TAG}" >> $GITHUB_OUTPUT
+          if jq -e --arg major "${TAG%%.*}" 'any(.[]; . == $major)' <<< "$MARKETPLACE_MAJOR_VERSIONS" > /dev/null; then
+            echo "marketplace=true" >> $GITHUB_OUTPUT
+          else
+            echo "marketplace=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build Artifacts
         run: make -j2 build.all
@@ -96,16 +108,29 @@ jobs:
           path: _output/**
 
       - name: Publish to Upbound Marketplace
-        if: env.XPKG_ACCESS_ID != ''
+        if: env.XPKG_ACCESS_ID != '' && steps.version.outputs.marketplace == 'true'
         # BRANCH_NAME must match xpkg.mk's RELEASE_BRANCH_FILTER or publish.artifacts is a silent no-op.
         run: make publish BRANCH_NAME=main
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to ghcr.io
+        # BRANCH_NAME must match xpkg.mk's RELEASE_BRANCH_FILTER or publish.artifacts is a silent no-op.
+        run: make publish BRANCH_NAME=main XPKG_REG_ORGS=${GHCR_REGISTRY} XPKG_REG_ORGS_NO_PROMOTE=${GHCR_REGISTRY}
         env:
           VERSION: ${{ steps.version.outputs.version }}
 
   append-marketplace-extensions:
     needs: publish-release
     runs-on: ubuntu-22.04
-    if: ${{ needs.publish-release.result == 'success' }}
+    if: ${{ needs.publish-release.result == 'success' && needs.publish-release.outputs.marketplace == 'true' }}
 
     steps:
       - name: Checkout
@@ -134,3 +159,28 @@ jobs:
         run: make publish.extensions
         env:
           VERSION: ${{ needs.publish-release.outputs.version }}
+
+  github-release:
+    needs: publish-release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.publish-release.outputs.tag }}
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release ${TAG} already exists"
+            exit 0
+          fi
+          prerelease=()
+          case "$TAG" in *-*) prerelease=(--prerelease) ;; esac
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "$TAG" \
+            --generate-notes \
+            "${prerelease[@]}"
