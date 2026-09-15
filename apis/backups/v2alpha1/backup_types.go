@@ -84,11 +84,15 @@ type BackupParameters struct {
 	Destination BackupDestination `json:"destination"`
 
 	// TransferTokenSecretRef references a Secret containing a Strapi
-	// transfer token scoped to "pull" (Settings > Transfer Tokens in the
-	// Strapi admin panel). This is distinct from the admin email/password
-	// on the ProviderConfig: Strapi's remote data-transfer endpoint
-	// authenticates with a transfer token, not an admin session.
-	TransferTokenSecretRef xpv1.SecretKeySelector `json:"transferTokenSecretRef"`
+	// transfer token scoped to "pull". Strapi's remote data-transfer
+	// endpoint authenticates with a transfer token, not an admin session.
+	//
+	// Optional: when omitted, the provider creates a pull-scoped transfer
+	// token through Strapi's admin API using the ProviderConfig credentials,
+	// stores it in a Secret named "<backup name>-transfer-token" owned by
+	// this Backup, and deletes the token when the Backup is deleted.
+	// +optional
+	TransferTokenSecretRef *xpv1.SecretKeySelector `json:"transferTokenSecretRef,omitempty"`
 
 	// IncludeAssets additionally pulls uploaded media files into the
 	// backup. Disabled by default, since self-hosted Strapi instances

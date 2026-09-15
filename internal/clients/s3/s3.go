@@ -22,9 +22,10 @@ limitations under the License.
 package s3
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"os"
+	"io"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -35,7 +36,17 @@ import (
 	"github.com/pkg/errors"
 )
 
-const defaultRegion = "us-east-1"
+const (
+	defaultRegion = "us-east-1"
+
+	// partSize is the size of each part of a multipart upload, and so the
+	// most an upload buffers in memory. S3 requires every part but the last
+	// to be at least 5 MiB.
+	partSize = 5 * 1024 * 1024
+
+	// maxParts is the most parts S3 accepts in one multipart upload.
+	maxParts = 10000
+)
 
 // Credentials is the JSON payload expected in a destination bucket
 // credentials secret.
@@ -69,9 +80,21 @@ type Config struct {
 	Credentials *Credentials
 }
 
+// api is the subset of the S3 API used by Client, so tests can substitute a
+// fake.
+type api interface {
+	PutObject(ctx context.Context, in *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	CreateMultipartUpload(ctx context.Context, in *s3.CreateMultipartUploadInput, optFns ...func(*s3.Options)) (*s3.CreateMultipartUploadOutput, error)
+	UploadPart(ctx context.Context, in *s3.UploadPartInput, optFns ...func(*s3.Options)) (*s3.UploadPartOutput, error)
+	CompleteMultipartUpload(ctx context.Context, in *s3.CompleteMultipartUploadInput, optFns ...func(*s3.Options)) (*s3.CompleteMultipartUploadOutput, error)
+	AbortMultipartUpload(ctx context.Context, in *s3.AbortMultipartUploadInput, optFns ...func(*s3.Options)) (*s3.AbortMultipartUploadOutput, error)
+	ListObjectsV2(ctx context.Context, in *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+	DeleteObjects(ctx context.Context, in *s3.DeleteObjectsInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error)
+}
+
 // Client is a minimal S3 client scoped to a single bucket.
 type Client struct {
-	s3     *s3.Client
+	s3     api
 	bucket string
 }
 
@@ -108,30 +131,99 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 	return &Client{s3: cl, bucket: cfg.Bucket}, nil
 }
 
-// PutFile uploads the local file at path under key and returns its size in
-// bytes. The file is read via a seekable *os.File so the SDK can sign the
-// request without buffering the whole payload in memory.
-func (c *Client) PutFile(ctx context.Context, key, path string) (int64, error) {
-	f, err := os.Open(path) //nolint:gosec // path is a provider-managed temp file, not user input
-	if err != nil {
-		return 0, errors.Wrap(err, "open backup file")
+// Upload streams r to key and returns the number of bytes written. The body
+// is read one part at a time, so memory use is bounded by partSize whatever
+// the object's size, and nothing is staged on disk. A body that fits in one
+// part is sent with PutObject; a larger one uses a multipart upload, which
+// is aborted if reading r or uploading fails.
+func (c *Client) Upload(ctx context.Context, key string, r io.Reader) (int64, error) {
+	buf := make([]byte, partSize)
+	n, err := io.ReadFull(r, buf)
+	switch {
+	case errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF):
+		if _, err := c.s3.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:        aws.String(c.bucket),
+			Key:           aws.String(key),
+			Body:          bytes.NewReader(buf[:n]),
+			ContentLength: aws.Int64(int64(n)),
+		}); err != nil {
+			return 0, errors.Wrapf(err, "put object %q", key)
+		}
+		return int64(n), nil
+	case err != nil:
+		return 0, errors.Wrapf(err, "read %q", key)
 	}
-	defer f.Close() //nolint:errcheck
+	return c.multipartUpload(ctx, key, r, buf)
+}
 
-	stat, err := f.Stat()
+func (c *Client) multipartUpload(ctx context.Context, key string, r io.Reader, first []byte) (int64, error) {
+	created, err := c.s3.CreateMultipartUpload(ctx, &s3.CreateMultipartUploadInput{
+		Bucket: aws.String(c.bucket),
+		Key:    aws.String(key),
+	})
 	if err != nil {
-		return 0, errors.Wrap(err, "stat backup file")
+		return 0, errors.Wrapf(err, "create multipart upload %q", key)
 	}
 
-	if _, err := c.s3.PutObject(ctx, &s3.PutObjectInput{
-		Bucket:        aws.String(c.bucket),
-		Key:           aws.String(key),
-		Body:          f,
-		ContentLength: aws.Int64(stat.Size()),
+	parts, size, err := c.uploadParts(ctx, key, created.UploadId, r, first)
+	if err != nil {
+		// Best effort: an unfinished multipart upload otherwise lingers (and
+		// is billed) until a bucket lifecycle rule removes it.
+		_, _ = c.s3.AbortMultipartUpload(context.WithoutCancel(ctx), &s3.AbortMultipartUploadInput{ //nolint:errcheck // best-effort cleanup
+			Bucket:   aws.String(c.bucket),
+			Key:      aws.String(key),
+			UploadId: created.UploadId,
+		})
+		return 0, err
+	}
+
+	if _, err := c.s3.CompleteMultipartUpload(ctx, &s3.CompleteMultipartUploadInput{
+		Bucket:          aws.String(c.bucket),
+		Key:             aws.String(key),
+		UploadId:        created.UploadId,
+		MultipartUpload: &types.CompletedMultipartUpload{Parts: parts},
 	}); err != nil {
-		return 0, errors.Wrapf(err, "put object %q", key)
+		return 0, errors.Wrapf(err, "complete multipart upload %q", key)
 	}
-	return stat.Size(), nil
+	return size, nil
+}
+
+// uploadParts uploads buf, which holds the first full part, followed by the
+// rest of r. buf is reused for every part.
+func (c *Client) uploadParts(ctx context.Context, key string, uploadID *string, r io.Reader, buf []byte) ([]types.CompletedPart, int64, error) {
+	var (
+		parts []types.CompletedPart
+		size  int64
+	)
+	chunk := buf
+	for num := int32(1); len(chunk) > 0; num++ {
+		if num > maxParts {
+			return nil, 0, errors.Errorf("object %q exceeds %d parts", key, maxParts)
+		}
+		out, err := c.s3.UploadPart(ctx, &s3.UploadPartInput{
+			Bucket:        aws.String(c.bucket),
+			Key:           aws.String(key),
+			UploadId:      uploadID,
+			PartNumber:    aws.Int32(num),
+			Body:          bytes.NewReader(chunk),
+			ContentLength: aws.Int64(int64(len(chunk))),
+		})
+		if err != nil {
+			return nil, 0, errors.Wrapf(err, "upload part %d of %q", num, key)
+		}
+		parts = append(parts, types.CompletedPart{ETag: out.ETag, PartNumber: aws.Int32(num)})
+		size += int64(len(chunk))
+
+		if len(chunk) < partSize {
+			break // a short part means r is drained
+		}
+		n, err := io.ReadFull(r, buf)
+		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, 0, errors.Wrapf(err, "read %q", key)
+		}
+		chunk = buf[:n]
+	}
+	return parts, size, nil
 }
 
 // Object describes an object found by ListObjects.
