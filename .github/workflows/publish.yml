@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+      # v2.x.x tags are published to ghcr.io by release-v2.yml.
+      - '!v2.*'
 
 env:
   GO_VERSION: '1.23'
