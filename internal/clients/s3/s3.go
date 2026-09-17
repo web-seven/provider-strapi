@@ -35,6 +35,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/pkg/errors"
 )
 
@@ -141,7 +142,9 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		// UNSIGNED-PAYLOAD, which GCS rejects as SignatureDoesNotMatch.
 		// Swap in the middleware that hashes and signs the payload. Swap
 		// (not Insert) because every operation already registers one.
-		o.APIOptions = append(o.APIOptions, signPayload)
+		o.APIOptions = append(o.APIOptions, signPayload, func(stack *middleware.Stack) error {
+			return stack.Finalize.Insert(dropAcceptEncoding{}, "Signing", middleware.Before)
+		})
 	})
 
 	return &Client{s3: cl, bucket: cfg.Bucket}, nil
@@ -152,6 +155,22 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 func signPayload(stack *middleware.Stack) error {
 	_, err := stack.Finalize.Swap((*v4.ComputePayloadSHA256)(nil).ID(), &v4.ComputePayloadSHA256{})
 	return err
+}
+
+// dropAcceptEncoding removes the Accept-Encoding header the SDK sets before
+// signing. GCS rewrites that header in transit, so signing it makes GCS
+// reject the request as SignatureDoesNotMatch.
+type dropAcceptEncoding struct{}
+
+func (dropAcceptEncoding) ID() string { return "DropAcceptEncodingForGCS" }
+
+func (dropAcceptEncoding) HandleFinalize(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (
+	middleware.FinalizeOutput, middleware.Metadata, error,
+) {
+	if r, ok := in.Request.(*smithyhttp.Request); ok {
+		r.Header.Del("Accept-Encoding")
+	}
+	return next.HandleFinalize(ctx, in)
 }
 
 // Upload streams r to key and returns the number of bytes written. The body

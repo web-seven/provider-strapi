@@ -25,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -165,9 +166,10 @@ func TestNew_SignsPayloadOverHTTPS(t *testing.T) {
 	body := []byte("backup")
 	want := sha256.Sum256(body)
 
-	var got string
+	var got, auth string
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = r.Header.Get("X-Amz-Content-Sha256")
+		auth = r.Header.Get("Authorization")
 	}))
 	defer srv.Close()
 
@@ -189,5 +191,9 @@ func TestNew_SignsPayloadOverHTTPS(t *testing.T) {
 	}
 	if got != hex.EncodeToString(want[:]) {
 		t.Errorf("X-Amz-Content-Sha256 = %q, want the body's SHA-256", got)
+	}
+	// GCS rewrites Accept-Encoding in transit, so it must not be signed.
+	if strings.Contains(strings.ToLower(auth), "accept-encoding") {
+		t.Errorf("Authorization signs Accept-Encoding: %q", auth)
 	}
 }
