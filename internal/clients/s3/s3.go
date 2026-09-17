@@ -109,7 +109,16 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 		region = defaultRegion
 	}
 
-	optFns := []func(*awsconfig.LoadOptions) error{awsconfig.WithRegion(region)}
+	optFns := []func(*awsconfig.LoadOptions) error{
+		awsconfig.WithRegion(region),
+		// GCS's S3-compatible XML API doesn't accept the SDK's default
+		// flexible checksum headers (x-amz-sdk-checksum-algorithm,
+		// x-amz-checksum-crc32) and rejects requests that include them as
+		// SignatureDoesNotMatch. Only send/require them when a caller (or
+		// operation) explicitly opts in.
+		awsconfig.WithRequestChecksumCalculation(aws.RequestChecksumCalculationWhenRequired),
+		awsconfig.WithResponseChecksumValidation(aws.ResponseChecksumValidationWhenRequired),
+	}
 	if cfg.Credentials != nil {
 		optFns = append(optFns, awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 			cfg.Credentials.AccessKeyID, cfg.Credentials.SecretAccessKey, cfg.Credentials.SessionToken,
