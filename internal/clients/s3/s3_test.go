@@ -19,8 +19,12 @@ package s3
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -152,5 +156,38 @@ func TestUpload_ReadErrorBeforeFirstPartUploadsNothing(t *testing.T) {
 	}
 	if len(f.puts) != 0 || f.created != 0 {
 		t.Fatalf("expected nothing to be uploaded, got puts=%d created=%d", len(f.puts), f.created)
+	}
+}
+
+// GCS rejects UNSIGNED-PAYLOAD, which the SDK uses for uploads over HTTPS by
+// default, so the client must sign the body's SHA-256.
+func TestNew_SignsPayloadOverHTTPS(t *testing.T) {
+	body := []byte("backup")
+	want := sha256.Sum256(body)
+
+	var got string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("X-Amz-Content-Sha256")
+	}))
+	defer srv.Close()
+
+	c, err := New(context.Background(), Config{
+		Bucket:         "bucket",
+		Endpoint:       srv.URL,
+		ForcePathStyle: true,
+		Credentials:    &Credentials{AccessKeyID: "id", SecretAccessKey: "secret"},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if _, err := c.s3.PutObject(context.Background(), &s3.PutObjectInput{
+		Bucket: aws.String("bucket"),
+		Key:    aws.String("key"),
+		Body:   bytes.NewReader(body),
+	}, func(o *s3.Options) { o.HTTPClient = srv.Client() }); err != nil {
+		t.Fatalf("PutObject: %v", err)
+	}
+	if got != hex.EncodeToString(want[:]) {
+		t.Errorf("X-Amz-Content-Sha256 = %q, want the body's SHA-256", got)
 	}
 }

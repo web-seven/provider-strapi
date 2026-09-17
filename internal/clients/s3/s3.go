@@ -29,10 +29,12 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go/middleware"
 	"github.com/pkg/errors"
 )
 
@@ -135,9 +137,21 @@ func New(ctx context.Context, cfg Config) (*Client, error) {
 			o.BaseEndpoint = aws.String(cfg.Endpoint)
 		}
 		o.UsePathStyle = cfg.ForcePathStyle
+		// Over HTTPS the SDK sends PutObject/UploadPart bodies as
+		// UNSIGNED-PAYLOAD, which GCS rejects as SignatureDoesNotMatch.
+		// Swap in the middleware that hashes and signs the payload. Swap
+		// (not Insert) because every operation already registers one.
+		o.APIOptions = append(o.APIOptions, signPayload)
 	})
 
 	return &Client{s3: cl, bucket: cfg.Bucket}, nil
+}
+
+// signPayload replaces the operation's payload-hash middleware with one that
+// always computes the body's SHA-256.
+func signPayload(stack *middleware.Stack) error {
+	_, err := stack.Finalize.Swap((*v4.ComputePayloadSHA256)(nil).ID(), &v4.ComputePayloadSHA256{})
+	return err
 }
 
 // Upload streams r to key and returns the number of bytes written. The body
